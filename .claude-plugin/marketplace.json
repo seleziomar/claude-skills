@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "seleziomar-skills",
+  "owner": {
+    "name": "Seleziomar Jr"
+  },
+  "plugins": [
+    {
+      "name": "trial-by-fire",
+      "description": "Adversarial pre-delivery testing: prove a change works, and keeps working, before it reaches the client.",
+      "version": "1.0.0",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/trial-by-fire"]
+    }
+  ]
+}
