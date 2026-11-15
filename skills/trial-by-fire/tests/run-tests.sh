@@ -84,7 +84,10 @@ SKILL="$SKILL_DIR/SKILL.md"
 if [ -f "$SKILL" ]; then
   fm=$(awk 'NR==1 && $0=="---"{f=1; next} f && $0=="---"{exit} f' "$SKILL")
   printf '%s\n' "$fm" | grep -qx 'name: trial-by-fire' && ok || fail "SKILL.md: name must be trial-by-fire"
-  desc=$(printf '%s\n' "$fm" | awk '/^description:/{f=1; sub(/^description:[ ]*/, ""); print; next} f && /^[a-z_-]+:/{f=0} f' | tr -s ' \n' ' ')
+  desc=$(printf '%s\n' "$fm" | awk '
+    /^description:/ { f=1; v=$0; sub(/^description:[ ]*/, "", v); if (v !~ /^[>|][+-]?[0-9]*$/) print v; next }
+    f && /^[A-Za-z_-]+:/ { f=0 }
+    f { print }' | tr -s ' \n' ' ' | sed -E "s/^ +//; s/ +$//; s/^\"(.*)\"$/\1/; s/^'(.*)'$/\1/")
   printf '%s' "$desc" | grep -q '^ *Use when' && ok || fail "SKILL.md: description must start with 'Use when'"
   printf '%s' "$desc" | grep -q 'teste de fogo' && ok || fail "SKILL.md: description must contain 'teste de fogo'"
   [ "${#desc}" -le 1024 ] && ok || fail "SKILL.md: description is over 1024 chars (${#desc})"

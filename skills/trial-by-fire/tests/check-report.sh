@@ -20,8 +20,8 @@ size=$(wc -c < "$HTML" | tr -d ' ')
 # Content without HTML and CSS comments.
 clean=$(awk '{ s = s $0 "\n" }
   END {
-    while ((i = index(s, "<!--")) > 0) { j = index(substr(s, i), "-->"); if (!j) break; s = substr(s, 1, i - 1) substr(s, i + j + 2) }
-    while ((i = index(s, "/*")) > 0)   { j = index(substr(s, i), "*/");  if (!j) break; s = substr(s, 1, i - 1) substr(s, i + j + 1) }
+    while ((i = index(s, "<!--")) > 0) { j = index(substr(s, i), "-->"); if (!j) { s = substr(s, 1, i - 1); break } s = substr(s, 1, i - 1) substr(s, i + j + 2) }
+    while ((i = index(s, "/*")) > 0)   { j = index(substr(s, i), "*/");  if (!j) { s = substr(s, 1, i - 1); break } s = substr(s, 1, i - 1) substr(s, i + j + 1) }
     printf "%s", s
   }' "$HTML")
 
@@ -38,15 +38,25 @@ for sec in verdict matrix cases scenarios unmapped suite findings inventory; do
   has "id=\"$sec\"" && ok || fail "missing section id=\"$sec\""
 done
 
-# Every src/href is embedded (data:), an anchor (#) or a Google Fonts file.
-external=$(printf '%s' "$clean" \
-  | grep -Eio "(src|href)[[:space:]]*=[[:space:]]*[\"'][^\"']*" \
-  | sed -E "s/^[^=]*=[[:space:]]*[\"']//" \
-  | grep -Ev '^(data:|#|https://fonts\.googleapis\.com|https://fonts\.gstatic\.com)' || true)
-[ -z "$external" ] && ok || fail "src/href outside data:, # or Google Fonts: $(printf '%s' "$external" | tr '\n' ' ')"
+# Every reference is embedded (data:), an anchor (#) or a Google Fonts file (host followed by '/').
+# Checked on the content with newlines collapsed, so a tag split across lines is still seen.
+flat=$(printf '%s' "$clean" | tr '\n\r\t' '   ')
+allowed='^(data:|#|https://fonts\.googleapis\.com/|https://fonts\.gstatic\.com/)'
+# src/href (quoted or unquoted) and CSS url(...) / @import "..." targets.
+external=$({
+  printf '%s' "$flat" | grep -Eio "(src|href)[[:space:]]*=[[:space:]]*(\"[^\"]*\"|'[^']*'|[^[:space:]>\"']+)" \
+    | sed -E "s/^[^=]*=[[:space:]]*//; s/^[\"']//; s/[\"']$//"
+  printf '%s' "$flat" | grep -Eio "url\([[:space:]]*[\"']?[^)\"']*" | sed -E "s/^url\([[:space:]]*[\"']?//"
+  printf '%s' "$flat" | grep -Eio "@import[[:space:]]*[\"'][^\"']*" | sed -E "s/^@import[[:space:]]*[\"']//"
+} | grep -Ev "$allowed" || true)
+# srcset: a data: value passes only if no further candidate follows that is not data:/#/Google Fonts.
+srcset=$(printf '%s' "$flat" | grep -Eio "srcset[[:space:]]*=[[:space:]]*(\"[^\"]*\"|'[^']*'|[^[:space:]>\"']+)" \
+  | sed -E "s/^[^=]*=[[:space:]]*//; s/^[\"']//; s/[\"']$//" \
+  | awk '{ if ($0 !~ /^data:/) { print; next } if ($0 ~ /,[ ]*(https?:|\/|\.|[A-Za-z0-9_-]+\.[a-z]+)/ && $0 !~ /,[ ]*data:/) print }' || true)
+[ -z "$external$srcset" ] && ok || fail "src/href/srcset/url() outside data:, # or Google Fonts: $(printf '%s %s' "$external" "$srcset" | tr '\n' ' ')"
 
 # A link to the same embedded image doubles the size, and Chrome blocks navigating to data:.
-grep -Eiq "<a[^>]+href[[:space:]]*=[[:space:]]*[\"']data:" <<< "$clean" && fail "<a href=\"data:...\"> duplicates the image" || ok
+grep -Eiq "<a[^>]+href[[:space:]]*=[[:space:]]*[\"']?data:" <<< "$flat" && fail "<a href=\"data:...\"> duplicates the image" || ok
 
 [ "$FAIL" -eq 0 ] && printf 'OK: %s (%d checks)\n' "$HTML" "$PASS"
 [ "$FAIL" -eq 0 ]
