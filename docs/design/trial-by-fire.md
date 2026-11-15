@@ -18,9 +18,9 @@ The process lives in the skill. Everything that is specific to a project lives i
 | Language | Skill text in English. The description carries trigger phrases in English and Portuguese. Matrix, report and messages are written in the user's language |
 | Process vs environment | Process in the skill. Environment in each project's `docs/trial-by-fire/ENVIRONMENT.md` |
 | Checklists | A generic checklist ships with the skill. A project may add its own optional `docs/trial-by-fire/checklist.md` in the same format. Phase 1 crosses both, generic first |
-| Learning | A `learn` mode turns QA or client adjustments into checklist examples or classes. Generic lessons go to a writable clone of this repository; project-only lessons go to the project checklist |
-| Tools | Generic. Browser: Claude in Chrome preferred, otherwise another automation with the same rules. Report: published as a private page only if a publishing tool exists, otherwise a local HTML file |
-| Versioning | Semantic versions in `.claude-plugin/marketplace.json`. A checklist example or class is a patch bump |
+| Learning | A `learn` mode turns QA or client adjustments into checklist examples or classes. Generic lessons are rewritten without project data and go to a writable clone of this repository (found through `## Skills repo clone`); project-only lessons go to the project checklist |
+| Tools | Generic. Browser: Claude in Chrome preferred, otherwise another automation with the same rules; with none, the round stops and the verdict is "not ready". Report: published as a private page only if a publishing tool exists, otherwise a local HTML file |
+| Versioning | Semantic versions in `.claude-plugin/marketplace.json`. Patch = a checklist example or class; minor = a process change in `SKILL.md`; major = a contract change (ENVIRONMENT.md headings, report section ids, checklist format) |
 
 Alternatives rejected: keeping one skill copy per project (copies diverge); keeping the skill only in a
 personal skills folder (no history, no sharing); a bilingual skill text (maintenance cost).
@@ -44,9 +44,14 @@ The plugin namespaces the skill (`trial-by-fire:trial-by-fire`); with `npx skill
 
 ## The process
 
-- **Two fronts, in order.** Front 1 (brute, functional): what corrupts data, blocks the user or leaks. Front 2
-  (polish, prototype): every screen and state next to the prototype at 1,366, 1,600 and 1,920 px and on
-  mobile. Front 2 starts when Front 1 has no open Bug or serious Correction.
+- **Two fronts, in order.** Front 1 (functional): what corrupts data, blocks the user or leaks. Front 2
+  (polish, prototype): every screen and state next to the prototype at 1,366, 1,600 and 1,920 px of CSS
+  viewport (`window.innerWidth`, recorded with each screenshot) and on mobile (375 px unless the project says
+  otherwise). Front 2 starts only when Front 1 is closed: no Bug or Correction open. If Front 1 ends with one
+  open, the report says "not ready" and the developer chooses the next cycle or resuming this one after the fix.
+- **Fixed** = the case ran again on the new commit, with a new screenshot. When the commit under test changes,
+  the affected Front 1 cases and the suite run again; the suite that counts is the one on the final commit,
+  and the report records that commit.
 - **Phase 0, survey:** read the environment file, derive the target, spec and diff (from the merge-base), and
   build the dimension matrix. An N/A dimension is written with a reason that is a fact from the code.
 - **Phase 1, cases and CHECKPOINT:** cases cross both checklists, each with a front, a precondition, steps and
@@ -59,8 +64,10 @@ The plugin namespaces the skill (`trial-by-fire:trial-by-fire`); with `npx skill
 - **Phase 4, suite:** full suite, isolated from the screen's data when possible, with attribution against a
   baseline.
 - **Phase 5, report:** `matrix-and-cases.md`, `report.md`, a closed `rollback-inventory.md`, a self-contained
-  HTML report and `images/`.
-- **Phase 6, learn:** append-only changes to a checklist.
+  HTML report and `images/`. "ready" only with both fronts closed, the suite run on the final commit and the
+  rollback inventory closed. A tracker comment is shown and asked for before it is posted.
+- **Phase 6, learn:** append-only changes to a checklist; a generic lesson is rewritten without project data
+  before it reaches this public repository.
 
 ## File contracts
 
@@ -93,13 +100,16 @@ An optional `## Skills repo clone` may follow, naming a writable clone for the l
 ### Report contract
 
 The HTML report keeps `<meta name="report" content="trial-by-fire">` and the template's section ids, so the
-title and text can be translated. Images are embedded as data URIs. `tests/check-report.sh <html>` must exit 0
-before the report is shown.
+title and text can be translated (`<html lang>` follows the user's language). Images are embedded as data URIs.
+`tests/check-report.sh <html>` must exit 0 before the report is shown. It ignores HTML comments everywhere and
+CSS comments only inside `<style>`, so a `/*` in the report's text (a glob, a path) is checked as content.
 
 ### run-tests.sh modes
 
 - No argument: checks `SKILL.md` (frontmatter, required terms, a verdict that needs both fronts),
-  `checklist.md`, `environment-template.md` and that `report-template.html` passes `check-report.sh`.
+  `checklist.md` (format, and no e-mail address, IP other than `127.0.0.1` or URL),
+  `environment-template.md`, that `report-template.html` passes `check-report.sh`, and the regressions of
+  `check-report.sh` on fixtures built at run time in a temporary folder.
 - `--project <root>`: checks `<root>/docs/trial-by-fire/ENVIRONMENT.md` and, when it exists,
   `<root>/docs/trial-by-fire/checklist.md`.
 
@@ -115,6 +125,7 @@ before the report is shown.
   e-mail addresses. Anything project-specific belongs in that project's `ENVIRONMENT.md` or checklist. A leak
   scan runs before every push.
 - **Never soften the discipline.** The CHECKPOINT, a screenshot per case, Front 2 as part of the verdict and
-  the full suite stay mandatory. Without the suite, or with a front open, the verdict is "not ready".
-- Credentials are typed only on local development hosts, or on test-marked hosts that the project lists
-  explicitly. The agent never repeats a password.
+  the full suite stay mandatory. Without the suite on the final commit, with a front open or with the
+  rollback inventory open, the verdict is "not ready".
+- Credentials are typed only on local development hosts, or on hosts whose first DNS label, whole, is a test
+  marker and that the project lists explicitly. The agent never repeats a password.
