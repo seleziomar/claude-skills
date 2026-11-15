@@ -11,12 +11,13 @@ Fixed format (`tests/run-tests.sh` fails outside it). The "learn" mode only APPE
 of the Examples line of the right class, or a new class at the end of the file, before "Method rules".
 Never reorder or compact.
 
-`**Front:**` says which front the class is crossed on: `1` (functional), `2` (prototype), or `1 and 2`.
-Phase 1 crosses only the classes of the front in progress; a new class declares its own.
+`**Front:**` is `1` (functional), `2` (prototype), or `1 and 2`. Phase 1 crosses every class, for both
+fronts; `Front:` says which front its cases run on (an agent working on Front 2 receives only `2` and
+`1 and 2`). A new class declares its own.
 
 ## Screen different from the prototype
 **Front:** 2
-**Applies when:** the delivery has a screen in the spec's `prototype/`.
+**Applies when:** the delivery has a screen in the prototype (see `## Delivery sources` in ENVIRONMENT.md).
 **How to prove:** screenshot of the system next to the screenshot of the prototype, screen by screen and state by state (empty, error, success); list every difference in text, color, icon, order and spacing. The prototype is a requirement too.
 **Examples:** rules modals with cards, bands and stars that were not in the prototype · an order label and help texts that diverged from the prototype · a tour arrow pointing away from its target, a rules modal far wider than designed with titles in the wrong color, modal headers and an out-of-selection row that was not dimmed — the test cases only expected the behavior ("opens", "disables") and passed.
 
@@ -50,11 +51,11 @@ Phase 1 crosses only the classes of the front in progress; a new class declares 
 **How to prove:** process the queue by hand, WAIT, and check without refreshing that the screen shows the result; the result cannot exist only in the log.
 **Examples:** a list did not update when the job finished · an undo action required a page refresh · an outcome was written only to the log.
 
-## Election or state rule
+## Which record wins (selection or state rule)
 **Front:** 1
 **Applies when:** a button, action or status depends on "which is the latest", "which is active", or on a state transition.
-**How to prove:** build the edge case (a record with no effect, two candidates, an intermediate state such as "Processing") and check which one is elected and what the screen allows.
-**Examples:** an import that changed nothing was elected as "the latest" and blocked the Undo button.
+**How to prove:** build the edge case (a record with no effect, two candidates, an intermediate state such as "Processing") and check which one wins and what the screen allows.
+**Examples:** an import that changed nothing was picked as "the latest" and blocked the Undo button.
 
 ## Data integrity on reversal
 **Front:** 1
@@ -124,8 +125,8 @@ Phase 1 crosses only the classes of the front in progress; a new class declares 
 
 ## Screen cut off or covered by the layout on a wide screen
 **Front:** 2
-**Applies when:** the delivery has a modal, balloon, tour or any floating or wide element (a large modal class, width in `%`/`vw`).
-**How to prove:** open each one at 1,366, 1,600 and 1,920 px and check that it shows in full with nothing from the layout on top (fixed side menu, chat widget): screenshot, and `document.elementFromPoint` at the four corners must land inside it. Read in the code where it is mounted: inside a `position: fixed` container its own `z-index` does not lift it above the menu.
+**Applies when:** the delivery has a modal, tooltip, popover, tour or any floating or wide element (a large modal class, width in `%`/`vw`).
+**How to prove:** open each one at 1,366, 1,600 and 1,920 px of CSS viewport (`window.innerWidth`, recorded with each screenshot) and check that it shows in full with nothing from the layout on top (fixed side menu, chat widget): screenshot, and `document.elementFromPoint` at the four corners must land inside it. Read in the code where it is mounted: inside a `position: fixed` container its own `z-index` does not lift it above the menu.
 **Examples:** a wide rules modal had its left edge under the fixed side menu; it was mounted inside a `position: fixed` container, so raising its `z-index` did nothing.
 
 ## Data written by the delivery and edited on another screen
@@ -138,4 +139,4 @@ Phase 1 crosses only the classes of the front in progress; a new class declares 
 **Front:** 1 and 2
 **Applies when:** always — these are the rules of the round itself.
 **How to prove:** the report shows each one followed.
-**Examples:** one case at a time, never in a block · a scenario without a screenshot did not happen · a dimension that is N/A is declared with the reason · measure async work after waiting · a scenario the user cannot reach does not enter · do not hunt for defects to look useful · pre-existing is proven by reproducing on the base · legacy data last · Front 1 (functional) before Front 2 (prototype), and the verdict needs both · a case that opens a screen or modal also has a visual expectation, not only the behavior.
+**Examples:** one case at a time, never in a block · a scenario without a screenshot did not happen · a dimension that is N/A is declared with the reason · measure async work after waiting · a scenario the user cannot reach does not enter · do not hunt for defects to look useful · pre-existing is proven by reproducing on the base · legacy data last · Front 1 (functional) before Front 2 (prototype), and the verdict needs both · a case that opens a screen or modal also has a visual expectation, not only the behavior · fixed = the case ran again on the new commit, with a new screenshot, and the suite that counts ran on the final commit.

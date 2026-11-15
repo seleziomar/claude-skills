@@ -20,15 +20,18 @@ Example:
 Say how to start the app and where it answers.
 - Start command, URL(s), ports, and anything about https (self-signed certificate, proxy).
 - Credential rule (an allow-list): the agent types a password ONLY on (a) a local development host (exactly
-  `localhost`, `127.0.0.1`, `*.localhost`, `*.test`) or (b) a host whose name carries a test marker (`staging.`,
-  `homolog.`, `dev.`, `test.`, `qa.`) AND that is listed here under "Allowed hosts for typing credentials". On
-  any other host (production, a bare IP, a client demo host, anything unlisted) the human logs in, and the agent
-  continues in that session. The agent never repeats a password in chat.
+  `localhost`, `127.0.0.1`, `*.localhost`, `*.test`) or (b) a host whose first DNS label, whole, is a test
+  marker (`staging.`, `homolog.`, `dev.`, `test.`, `qa.`: `staging.acme-orders.example` qualifies,
+  `latest.acme-orders.example` does not) AND that is listed here under "Allowed hosts for typing credentials".
+  On any other host (production, a bare IP, a client demo host, anything unlisted) the human logs in, and the
+  agent continues in that session. The agent never repeats a password in chat.
 - Allowed hosts for typing credentials: list them (the local hosts above need no listing).
+- Mobile width for Front 2: 375 px of CSS viewport unless you give another one here.
 
 Example:
 - Start: `docker compose up -d`. URL: `https://app.localhost` (self-signed certificate; accept it once). API on port 8080.
 - Allowed hosts for typing credentials: `staging.acme-orders.example` (`app.localhost` is local, so it needs no listing).
+- Mobile width: 390 px (the phone the product targets).
 
 ## Profiles and test users
 
@@ -77,6 +80,8 @@ Say how the automated suite runs and how to read it.
 - Command, and where it runs.
 - Whether it shares the database with the UI. If so, isolate it (separate database or schema) so it cannot wipe test data.
 - Baseline: known failures. Attribute a new failure to the delivery by running the same test at the merge-base.
+- No automated suite? Write "None". That is allowed, but the verdict stays "not ready" on purpose (the skill
+  never calls a delivery ready without a suite run on the final commit), and the report says why.
 
 Example:
 - Command: `docker compose exec app composer test`. Uses a separate `acme_test` database.

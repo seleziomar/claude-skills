@@ -28,33 +28,44 @@ headings and the report's section ids stay in English: they are checked.
 ## Two fronts
 
 The round has two fronts, in this order. Kept apart, the visual detail does not compete for attention with
-the serious bug, and the serious bug does not hide the visual detail.
+the functional bug, and the functional bug does not hide the visual detail.
 
-- **Front 1 — brute (functional):** what corrupts data, blocks the user or leaks: writes, integrity,
+- **Front 1 — functional:** what corrupts data, blocks the user or leaks: writes, integrity,
   isolation, permission, server errors, async work, legacy data and the suite. The expected result is the
   behavior.
-- **Front 2 — polish (prototype):** starts when every Front 1 case has run with no Bug or serious Correction
-  open (fixed, or accepted by the developer). Every screen and every modal on the screen map, state by state (empty,
+- **Front 2 — polish (prototype):** starts only when Front 1 is closed (below): every Front 1 case ran and no
+  Bug or Correction from it is open. Every screen and every modal on the screen map, state by state (empty,
   loading, with a selection, error, success), next to the prototype, at 1,366, 1,600 and 1,920 px and on
-  mobile: width, header, colors, typography, icons, arrows and balloons, dimmed or disabled rows, and nothing
-  from the layout (fixed menu, floating widget) on top. Start by comparing the prototype's CSS with the
+  mobile: width, header, colors, typography, icons, arrows, tooltips and popovers, dimmed or disabled rows, and
+  nothing from the layout (fixed menu, floating widget) on top. Start by comparing the prototype's CSS with the
   components' CSS (this can go to an agent); the screenshot confirms.
+  - **The widths are CSS viewport widths.** Size or emulate the window until `window.innerWidth` returns
+    `1366`, `1600` and `1920` at the current zoom, and record the `innerWidth` with each screenshot. Mobile is
+    375 px CSS wide, or the mobile width that `## Environment` in ENVIRONMENT.md gives.
 - Front 2 is not "an improvement for later": a case that only expects "opens" or "becomes disabled" passes
   with the screen off the prototype, and QA is the one who catches it (a tour arrow pointing away from its
   target, a wide modal under the fixed menu, modal headers, an out-of-selection row that was not dimmed).
-- A front is closed when every one of its cases ran and no Bug or Correction from it is open (fixed, or
+- A front is **closed** when every one of its cases ran and no Bug or Correction from it is open (fixed, or
   accepted by the developer), or when the matrix declares it N/A with a fact from the code (for example, the
   delivery has no screen). "There is no prototype" does not close Front 2: the screen
   is still compared with the product's existing screens (the source screen of a reused component), at the
   widths above, and its copy is reviewed.
+- **Fixed** means the finding's case ran again on the new commit, with a new screenshot. A fix the developer
+  describes, or a diff you read, is not "fixed".
+- **When the commit under test changes** (a fix landed during the round), run the Phase 2 pre-flight again on
+  the new commit, run again every Front 1 case the change can affect, and run the suite on the final commit
+  (Phase 4). The report records the final commit.
+- **Front 1 ends with a Bug or Correction open:** Front 2 does not start and the report says **"not ready"**.
+  The developer fixes it outside this skill and chooses: start the next cycle, or resume this same cycle after
+  the fix (on the new commit, as the item above says).
 
 ## Where things are
 
 - `<skill>` = the folder of this file. `checklist.md`, `environment-template.md`, `report-template.html` and
   `tests/` are in it. An installed copy lives in a cache folder and is overwritten on update: never edit it,
   and never write its path into a project file.
-- **The project:** the repository where the session runs. Main clone:
-  `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"`.
+- **The project:** the repository where the session runs. `<project root>` = its top folder
+  (`git rev-parse --show-toplevel`).
 - **`docs/trial-by-fire/ENVIRONMENT.md`** in the project: everything specific to the project — delivery
   sources, how to start the app, profiles and where the test credentials live, the test-data policy, servers,
   queue and e-mail, the suite command and its baseline, how to build the "before", the results folder, the
@@ -96,7 +107,7 @@ the serious bug, and the serious bug does not hide the visual detail.
    | Profiles | lives behind a permission or role | one screenshot per profile, **including the denial or the absence** for whoever must not see it; users created through the screen (a superuser bypasses permissions) |
    | Isolation (tenant) | writes per tenant or reads data of another tenant or account | two tenants, including by direct URL |
    | Legacy data | changes how an existing record is read or written | a record created with the old code, opened with the new one |
-   | Responsive | touched a view, CSS or JS | mobile screenshot of the changed screens and, in Front 2, wide screens (1,366, 1,600 and 1,920 px): modal and balloon whole, nothing from the layout on top |
+   | Responsive | touched a view, CSS or JS | mobile screenshot of the changed screens and, in Front 2, wide screens (1,366, 1,600 and 1,920 px of CSS viewport, `window.innerWidth` recorded): modal, tooltip and popover whole, nothing from the layout on top |
    | Queue / e-mail | the action dispatches a job, a scheduled task or an e-mail | the queue processed as `## Queue and e-mail` says; the result seen on the screen **after waiting**; the e-mail read where it lands |
    | Upload | the screen receives a file | a valid file, a wrong type, an empty file, one near the size limit and one above it |
    | Integration | touches an external integration | integration active and inactive |
@@ -144,14 +155,16 @@ the rest as gaps, and the developer chooses.
     part of the delivery. Nothing is tested on a state nobody knows will reach QA.
   - The app is up the way `## Environment` says, and it runs the commit under test (for a remote environment,
     read its commit as ENVIRONMENT.md says and compare). Something missing or different → **STOP and ask**
-    (update? rebase?). Never switch to a different way of running the app, not even as plan B.
+    (update? rebase?). Never switch to a different way of running the app, not even as plan B. Whenever the
+    commit under test changes, this pre-flight runs again.
   - Note where the application log ends before the first click, so what the round writes can be told apart.
 - Through the **interface**, without asking at every step: create a user, grant a permission, switch on a
   setting, switch tenant. Prefer creating a user over touching someone else's.
 - **Credentials — an allow-list, from `## Environment`:** type a password ONLY on a local development host
-  (`localhost`, `127.0.0.1`, `*.localhost`, `*.test`) or on a host whose name carries a test marker
-  (`staging.`, `homolog.`, `dev.`, `test.`, `qa.`) AND that ENVIRONMENT.md lists under "Allowed hosts for
-  typing credentials". On any other host (production, a bare IP, a client's demo, anything
+  (`localhost`, `127.0.0.1`, `*.localhost`, `*.test`) or on a host whose **first DNS label, whole,** is a test
+  marker (`staging.`, `homolog.`, `dev.`, `test.`, `qa.`: `staging.acme.example` qualifies,
+  `latest.acme.example` and `staging-old.acme.example` do not) AND that ENVIRONMENT.md lists under "Allowed
+  hosts for typing credentials". On any other host (production, a bare IP, a client's demo, anything
   unlisted) the human logs in, and you continue in that session. Take credentials from where
   `## Profiles and test users` says. **Never repeat a password** in chat, in a file or in the report.
 - **Never change the password of an account you did not create.** Need another user → create it through the
@@ -174,7 +187,8 @@ the rest as gaps, and the developer chooses.
 ## Phase 3 — Execution, case by case
 
 - **The screen through a browser, as the user.** Prefer Claude in Chrome; if it is not available, use another
-  browser automation tool with the same rules. Never the QA's automation suite.
+  browser automation tool with the same rules. Never the QA's automation suite. With **no browser automation
+  tool at all**, **STOP**: tell the developer that Phase 3 cannot run; the verdict is "not ready".
   - Click as the user: no internal route and no state set by script. The only exception is an isolation case,
     where typing another tenant's URL in the address bar **is** the test.
   - The click that proves a case is by **coordinate**, on the visible point of the control; refs and
@@ -186,10 +200,11 @@ the rest as gaps, and the developer chooses.
     (tabs share the session).
   - **One case at a time. A scenario without a screenshot did not happen.** Every screenshot is saved to
     `images/` in the results folder.
-  - **Front 1 first**, until it closes; **Front 2** comes after, on the already-fixed code.
+  - **Front 1 first**, until it is closed; **Front 2** comes after, on the commit where Front 1 closed. If
+    Front 1 ends with a Bug or Correction open, Front 2 does not start (see "Two fronts").
   - In Front 1, compare **only the control** (a zoomed crop), next to the prototype's screenshot. In Front 2,
-    compare the **whole screen** and the container (modal, balloon, row), not only the control: width, header
-    and dimmed state vanish in a crop of the control.
+    compare the **whole screen** and the container (modal, tooltip, popover, row), not only the control: width,
+    header and dimmed state vanish in a crop of the control.
   - **"Before", pre-existing behavior and legacy data come from a separate worktree at the merge-base,**
     built as `## Before (baseline) environment` says (its own environment name, ports and database). Never
     swap files in the delivery worktree: the screen runs from it, and the developer's uncommitted work can be
@@ -205,7 +220,7 @@ the rest as gaps, and the developer chooses.
   - Legacy data last.
 - **Code:** read the checklist classes that only show by reading (integrity, isolation, defaults, hidden field
   still submitted, text × behavior, lock order). In a large delivery this can go to an agent, and you verify
-  every serious finding personally.
+  every finding it reports personally before it enters the report.
 - **Finding:**
   - classify it as QA does: **Bug / Correction / Requirement divergence** (the product owner or the client
     decides) **/ Improvement**;
@@ -219,7 +234,7 @@ the rest as gaps, and the developer chooses.
 
 - The delivery's tests run on any machine: no fixed seed ids and **no skip**.
 - Start the full suite at the **start of Phase 3**, in the background, with the command from `## Test suite`,
-  on the delivery commit, so it runs while you test the screen (only when it is isolated; see below).
+  on the commit under test, so it runs while you test the screen (only when it is isolated; see below).
   - Isolate it from the UI's data when the project allows (its own database or schema, or its own worktree, as
     ENVIRONMENT.md says). A suite that shares the database with the screen produces false failures on both
     sides: a lock timeout on the screen, a false server error, a test broken because the screen switched the
@@ -230,30 +245,35 @@ the rest as gaps, and the developer chooses.
   - A worktree or database made for the suite is removed at the end, with its line in the inventory.
   - A CI run counts only when `## Test suite` says the suite runs there and the run is of the exact commit
     under test; write down which run.
+- **The run that counts is the one on the final commit.** If the commit under test changed during the round,
+  run the full suite again on the final commit. "ready" requires that run, and the report records the commit.
 - **Attribution:**
   - compare the run with the baseline (the known failures in `## Test suite`, or a run from before the
     delivery);
   - what fails now and did not fail before: run it again on the parent (the merge-base);
   - whatever is left answers three questions: does it pass in isolation? does it touch the delivery's code?
     is it flaky without any change?
-- Without the suite, the verdict is "not ready".
+- Without the suite run on the final commit, the verdict is "not ready". That includes a project whose
+  `## Test suite` says "None": allowed, and "not ready" on purpose; the report says why.
 
 ## Phase 5 — Report and artifact
 
 Write into the cycle folder:
 - `matrix-and-cases.md`;
-- `report.md`: findings by severity and by front; the verdict is **"ready"** only with both fronts closed and the suite run, otherwise **"not ready"**; pending decisions; the suite with its attribution;
+- `report.md`: the commit tested last; findings by severity and by front; the state of each front (closed, open, or N/A with the reason); the verdict is **"ready"** only with both fronts closed, the suite run on the final commit and the rollback inventory closed, otherwise **"not ready"**; pending decisions; the suite with its commit and its attribution;
 - `rollback-inventory.md`, **closed** (what was undone, and what stays and why);
 - `trial-by-fire-<target>-cycle-N.html`, from `<skill>/report-template.html`, with the images **embedded** as
   data URIs (only in `src`, with no `<a>` around them). Keep its `<meta name="report" content="trial-by-fire">`
-  and its section ids; the title and the text follow the user's language. Before showing it, run
+  and its section ids; the title and the text follow the user's language, and the `lang` attribute of
+  `<html>` is set to that language (for example `pt-BR`). Before showing it, run
   `bash <skill>/tests/check-report.sh <html>`: exit 0, otherwise fix it;
 - `images/*.jpg`.
 
 Show what you wrote and **ask before any commit and push** (images and the HTML stay out of git, as
 `## Results folder` says). Publish the HTML as a private artifact if an artifact or page-publishing tool exists,
-and hand over the link; otherwise hand over the local path. If `## Tracker` names a place, comment the result
-there (verdict, counts, where the report is).
+and hand over the link; otherwise hand over the local path. If `## Tracker` names a place, show the comment
+you would post (verdict, counts, where the report is) and **ask before posting it**, as with the commit and the
+push: QA or the client may see it.
 
 ## Phase 6 — `/trial-by-fire learn <file or text>`
 
@@ -265,19 +285,24 @@ there (verdict, counts, where the report is).
    `1 and 2`). Never reorder or compact.
 3. **Generic lesson** → `skills/trial-by-fire/checklist.md` in a **writable git clone of the skills
    repository**. The installed copy is overwritten on the next update and reaches nobody.
+   - **That repository is public.** Rewrite the lesson without the name of a project, client, company,
+     product or person, and without hosts, URLs, IPs, ids, e-mail addresses or credentials. If it cannot be
+     told without them, it is project-only (item 5).
    - The clone's path comes from `## Skills repo clone` in ENVIRONMENT.md; not there → ask. Never guess.
    - `git pull` before editing.
    - Bump the **patch** version of the plugin in `<clone>/.claude-plugin/marketplace.json`: without it, the
      installed copies do not receive the lesson.
-   - Run `bash <clone>/skills/trial-by-fire/tests/run-tests.sh`. It must exit 0.
+   - Run `bash <clone>/skills/trial-by-fire/tests/run-tests.sh`. It must exit 0 (it also fails on an e-mail
+     address, an IP or a URL in the checklist).
    - Show the diff and **ask before the commit and the push** (or before opening a pull request, when the
      person does not own the repository).
 4. **No clone** (only the read-only installed copy) → write the lesson into the project's
-   `docs/trial-by-fire/checklist.md` and suggest opening an issue or a pull request at
-   https://github.com/seleziomar/claude-skills with it.
+   `docs/trial-by-fire/checklist.md` as item 5 says (format, `--project` check, the question before the commit
+   and the push), and suggest opening an issue or a pull request at https://github.com/seleziomar/claude-skills
+   with the lesson rewritten as item 3 says.
 5. **Project-only lesson** → the project's `docs/trial-by-fire/checklist.md`.
-   - A new project checklist copies the header and format of `<skill>/checklist.md` and also ends with
-     `## Method rules` (the format check requires it).
+   - A new project checklist follows the format of `<skill>/checklist.md`, with a project header, and also
+     ends with `## Method rules` (the format check requires it).
    - Run `bash <skill>/tests/run-tests.sh --project <project root>`. It must exit 0.
    - Show the diff and **ask before the commit and the push**.
 6. A lesson that is also a coding rule may belong in the project's agent instructions too: suggest it, do not
@@ -286,7 +311,8 @@ there (verdict, counts, where the report is).
 ## Gotchas
 
 - Browser (Claude in Chrome):
-  - set the tab zoom to **90%**; at any other zoom the capture comes out repeated four times;
+  - if the captures come out repeated (the same image four times), set the tab zoom to **90%** and recompute
+    the window size: the zoom changes `window.innerWidth`, so resize until it returns the target width again;
   - screenshots in **JPEG**; a full-screen PNG overflows `Page.captureScreenshot`;
   - prefer zoomed crops with `save_to_disk`, and copy the file into `images/`;
   - a download restarts the browser: check the downloaded file on disk.
@@ -308,25 +334,29 @@ there (verdict, counts, where the report is).
 | "The suite takes 30 minutes and does not fit the deadline; it goes as a recommendation" | When the project isolates it, it runs in the background while you test the screen; otherwise it runs before or after Phase 3. Without the suite, the verdict is "not ready". |
 | "There is no ENVIRONMENT.md; I'll infer the commands and go" | Build the draft from the template and the repository, ask the single round of questions, and write it only after the OK. |
 | "A quick script or console will create this data" | Data goes through the screen; what the screen cannot reach, the user cannot reach either. Direct writes only where ENVIRONMENT.md or the developer allows, and into the inventory. |
-| "It's only a demo host; I can type the password" | Only local hosts, and listed hosts with a test marker in the name. A client demo host never qualifies. Anywhere else, the human logs in. |
+| "It's only a demo host; I can type the password" | Only local hosts, and listed hosts whose first DNS label, whole, is a test marker. A client demo host never qualifies. Anywhere else, the human logs in. |
 | "The QA's automation suite (or a direct route) gets there faster" | It sets state a user cannot. The case is proven by a click on the visible control, with a screenshot. |
 | "The skills repository is probably at …" | Do not guess. Read `## Skills repo clone`; not there, ask. Without a clone, the lesson goes to the project's checklist. |
-| "Bump the minor version" | An example or a class in the checklist = patch. Minor is a new skill. |
+| "Bump the minor version" | An example or a class in the checklist = patch. Minor = a process change in SKILL.md. Major = a contract change (the ENVIRONMENT.md headings, the report's section ids, the checklist format). |
 | "It's just a visual detail; it goes as an Improvement and QA will accept it" | QA sends it back. Front 2 is part of the verdict, not Front 1's leftovers. |
 | "The case passed: it opened and became disabled" | The behavior passed. If the screen is off the prototype, its F2 case has not run yet. |
+| "The developer pushed the fix; I read the diff, it is fixed" | Fixed = the case ran again on the new commit, with a new screenshot. Then the affected Front 1 cases and the suite run again on the final commit. |
 
 ## Red flags — stop and go back to the phase
 
 - Clicking before the developer approves the matrix — including with "approved in advance", "test everything"
   or a short deadline.
 - A matrix missing the N/A row of some dimension, including the project dimensions.
-- A "ready" report without the suite, without Front 2, or with the inventory open.
+- A "ready" report without the suite run on the final commit, without Front 2, or with the inventory open.
 - A "ready" report with a Bug or Correction open (neither fixed nor accepted by the developer).
-- Starting Front 2 with a Bug or serious Correction from Front 1 still open.
+- Calling a finding fixed without running its case again on the new commit, with a new screenshot.
+- Starting Front 2 with a Bug or Correction from Front 1 still open.
 - Driving the screen with the QA's automation suite, an internal route or a script that sets state.
 - Typing a password on a host outside the allow-list, or repeating a password anywhere.
 - Swapping files in the delivery worktree (the "before" is a separate worktree).
 - Writing to a read-only server or to a database without the authorized exception in the inventory.
-- Writing ENVIRONMENT.md or a checklist without showing it and asking.
+- Writing ENVIRONMENT.md or a checklist without showing the draft or the diff and asking before writing or
+  committing.
+- Posting on the tracker without showing the comment and asking.
 - Editing the installed copy of the skill instead of a clone.
 - Publishing the report without `check-report.sh` exiting 0.

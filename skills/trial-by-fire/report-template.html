@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="report" content="trial-by-fire">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Set <html lang> to the user's language (for example pt-BR); the title and the text follow it. -->
 <title>Trial by fire — cycle 1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com/">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -71,14 +72,17 @@ ul.list { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 80c
 <header>
   <span class="eyebrow">Trial by fire · cycle N</span>
   <h1>TICKET-ID — name of the delivery</h1>
-  <div class="meta"><span>Branch <b>feature/example-checkout</b></span><span>Base <b>merge-base</b></span><span>Date <b>YYYY-MM-DD</b></span><span>Environment <b>local app · browser automation</b></span></div>
+  <div class="meta"><span>Branch <b>feature/example-checkout</b></span><span>Commit <b>sha</b></span><span>Base <b>merge-base</b></span><span>Date <b>YYYY-MM-DD</b></span><span>Environment <b>local app · browser automation</b></span></div>
 </header>
 
 <section id="verdict">
   <h2>Verdict</h2>
   <div class="verdict">
-    <!-- repeat: one card per key number. Ready only with both fronts closed and the suite run -->
-    <div class="card"><div class="top"><h3>Verdict: ready / not ready for QA</h3><span class="pill ok">READY</span></div><p>N cases, N findings, coverage X/Y requirements, suite run.</p></div>
+    <!-- Ready only with both fronts closed, the suite run on the final commit and the rollback inventory closed -->
+    <div class="card"><div class="top"><h3>Verdict: ready / not ready for QA</h3><span class="pill ok">READY</span></div><p>N cases, N findings, coverage X/Y requirements, tested on commit <code>sha</code>.</p></div>
+    <div class="card"><div class="top"><h3>Front 1: closed / open</h3><span class="pill ok">CLOSED</span></div><p>Functional: N cases run, no Bug or Correction open (fixed and re-run, or accepted by the developer).</p></div>
+    <div class="card"><div class="top"><h3>Front 2: closed / open / N/A (reason)</h3><span class="pill ok">CLOSED</span></div><p>Prototype: N screens × states at 1,366, 1,600 and 1,920 px of CSS viewport and on mobile.</p></div>
+    <div class="card"><div class="top"><h3>Suite: run on <code>sha</code></h3><span class="pill ok">RUN</span></div><p>The final commit · N files · N failures, attributed.</p></div>
   </div>
 </section>
 
@@ -97,10 +101,11 @@ ul.list { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 80c
   <h2>Cases and coverage</h2>
   <p>Coverage: <b>X/Y</b> requirements. Gaps: …</p>
   <div class="table-wrap"><table>
-    <thead><tr><th>Case</th><th>Source</th><th>Checklist class</th><th>Result</th></tr></thead>
+    <thead><tr><th>Case</th><th>Front</th><th>Source</th><th>Checklist class</th><th>Result</th></tr></thead>
     <tbody>
-      <!-- repeat -->
-      <tr><td>C01 — guest user adds an item to the cart</td><td>REQ-01</td><td>Screen differs from the design</td><td><span class="pill ok">OK</span></td></tr>
+      <!-- repeat: one row per case; Front is F1 (functional) or F2 (prototype) -->
+      <tr><td>C01 — guest user adds an item to the cart</td><td>F1</td><td>REQ-01</td><td>Server error on the main path</td><td><span class="pill ok">OK</span></td></tr>
+      <tr><td>C02 — cart screen next to the prototype</td><td>F2</td><td>REQ-01</td><td>Screen different from the prototype</td><td><span class="pill ok">OK</span></td></tr>
     </tbody>
   </table></div>
 </section>
@@ -109,11 +114,11 @@ ul.list { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 80c
   <h2>Scenarios in the order they ran</h2>
   <!-- repeat: one .step per case -->
   <article class="step">
-    <div class="head"><div class="t"><span class="id">C01</span><h3>Scenario title</h3><p class="action">Menu → Screen → action</p></div><span class="pill ok">OK</span></div>
+    <div class="head"><div class="t"><span class="id">C02 · F2</span><h3>Scenario title</h3><p class="action">Menu → Screen → action</p></div><span class="pill ok">OK</span></div>
     <p class="expected"><b>Expected:</b> … · <b>Actual:</b> …</p>
     <div class="shots">
-      <figure><img src="data:image/jpeg;base64,..." alt="System"><figcaption><span class="pill ok">SYSTEM</span>caption</figcaption></figure>
-      <figure><img src="data:image/jpeg;base64,..." alt="Design"><figcaption><span class="pill proto">DESIGN</span>caption</figcaption></figure>
+      <figure><img src="data:image/jpeg;base64,..." alt="System"><figcaption><span class="pill ok">SYSTEM</span>caption · innerWidth 1366</figcaption></figure>
+      <figure><img src="data:image/jpeg;base64,..." alt="Prototype"><figcaption><span class="pill proto">PROTOTYPE</span>caption</figcaption></figure>
     </div>
   </article>
 </section>
@@ -121,24 +126,26 @@ ul.list { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 80c
 <section id="unmapped">
   <h2>Unmapped cases — raised during development</h2>
   <ul class="list"><!-- repeat --><li>…</li></ul>
+  <h3>Pending decisions</h3>
+  <ul class="list"><!-- repeat: what waits for the product owner, the client or the developer, and who decides --><li>… — awaiting …</li></ul>
 </section>
 
 <section id="suite">
   <h2>Suite</h2>
-  <p>N files · N failures · attribution: …</p>
+  <p>Run on commit <code>sha</code> (the final commit) · N files · N failures · attribution: …</p>
 </section>
 
 <section id="findings">
   <h2>Findings</h2>
   <div class="verdict">
-    <!-- repeat: classification Bug / Correction / Requirement divergence / Improvement -->
-    <div class="card"><div class="top"><h3>Finding title</h3><span class="pill bad">BUG</span></div><p>Steps · expected vs actual · <code>path/to/file:line</code></p></div>
+    <!-- repeat: classification Bug / Correction / Requirement divergence / Improvement; "fixed" only after the case ran again on the new commit -->
+    <div class="card"><div class="top"><h3>Finding title</h3><span class="pill bad">BUG</span></div><p>F1 · steps · expected vs actual · <code>path/to/file:line</code> · open / fixed (re-run on <code>sha</code>) / accepted by the developer</p></div>
   </div>
 </section>
 
 <section id="inventory">
-  <h2>Revert inventory</h2>
-  <ul class="list"><!-- repeat --><li>user … created — <span class="pill ok">REVERTED</span></li></ul>
+  <h2>Rollback inventory</h2>
+  <ul class="list"><!-- repeat --><li>user … created — <span class="pill ok">UNDONE</span></li><li>record … stays until … (reason) — <span class="pill warn">STAYS</span></li></ul>
 </section>
 </main>
 </body>
