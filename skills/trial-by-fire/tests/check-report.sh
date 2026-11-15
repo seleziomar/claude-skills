@@ -4,6 +4,8 @@
 # Runs on the template (via run-tests.sh) and on the GENERATED HTML from Phase 5: the generated
 # file is what reaches QA, and that is where linked images, a missing dark mode or sideways
 # scrolling show up. Comments are ignored: a rule that only lives inside a comment does not count.
+# CSS comments exist only inside <style>: elsewhere "/*" is the report's own text (a glob such as
+# app/*.php, a path such as */cycle-*/images/), and stripping it would cut sections or hide images.
 set -uo pipefail
 
 HTML=${1:-}
@@ -17,12 +19,22 @@ fail() { printf 'FAIL: %s: %s\n' "$HTML" "$*" >&2; FAIL=$((FAIL + 1)); }
 size=$(wc -c < "$HTML" | tr -d ' ')
 [ "$size" -le 16777216 ] && ok || fail "larger than 16 MB ($size bytes)"
 
-# Content without HTML and CSS comments.
+# Content without HTML comments (anywhere) and CSS comments (only inside <style>...</style>; the
+# rest is copied unchanged).
 clean=$(awk '{ s = s $0 "\n" }
   END {
     while ((i = index(s, "<!--")) > 0) { j = index(substr(s, i), "-->"); if (!j) { s = substr(s, 1, i - 1); break } s = substr(s, 1, i - 1) substr(s, i + j + 2) }
-    while ((i = index(s, "/*")) > 0)   { j = index(substr(s, i), "*/");  if (!j) { s = substr(s, 1, i - 1); break } s = substr(s, 1, i - 1) substr(s, i + j + 1) }
-    printf "%s", s
+    out = ""
+    while ((i = index(tolower(s), "<style")) > 0) {
+      out = out substr(s, 1, i - 1); s = substr(s, i)
+      j = index(tolower(s), "</style")
+      if (j) { css = substr(s, 1, j - 1); s = substr(s, j) } else { css = s; s = "" }
+      # "/*" up to the next "*/"; an unclosed one runs to the end of the style block, never past it.
+      while ((k = index(css, "/*")) > 0) { m = index(substr(css, k + 2), "*/"); if (!m) { css = substr(css, 1, k - 1); break } css = substr(css, 1, k - 1) substr(css, k + m + 3) }
+      out = out css
+      if (j) { out = out substr(s, 1, 8); s = substr(s, 9) }
+    }
+    printf "%s", out s
   }' "$HTML")
 
 # grep -q reads from a here-string, not a pipe: with pipefail, `printf | grep -q` exits 141 (SIGPIPE)

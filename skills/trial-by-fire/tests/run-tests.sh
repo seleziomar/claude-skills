@@ -2,12 +2,16 @@
 # run-tests.sh — locks the format of what the trial-by-fire skill ships.
 #
 #   run-tests.sh                      checks the skill itself (SKILL.md, checklist.md,
-#                                     environment-template.md, report-template.html)
+#                                     environment-template.md, report-template.html), lints
+#                                     checklist.md for project data, and runs the regressions of
+#                                     check-report.sh on fixtures built at run time
 #   run-tests.sh --project <root>     checks <root>/docs/trial-by-fire/ENVIRONMENT.md and, if it
 #                                     exists, <root>/docs/trial-by-fire/checklist.md
 #
 # checklist.md is a living file (the learn mode adds classes): if a class loses a field, Phase 1
 # cannot cross it with the delivery and it silently disappears. That is why the format is checked here.
+# The skill's checklist.md also ships in a public repository, so it must not carry an e-mail address,
+# an IP address or a URL (a project checklist may: it is not linted).
 set -uo pipefail
 
 SKILL_DIR=$(cd "$(dirname "$0")/.." && pwd)
@@ -61,6 +65,16 @@ check_checklist() {
   [ "$last" = "## Method rules" ] && ok || fail "$label: 'Method rules' must be the last class"
 }
 
+# public_leaks <file>: prints the e-mail addresses, the IPv4 addresses other than 127.0.0.1 and the
+# http(s):// URLs found in <file>, one line, nothing when it is clean.
+public_leaks() {
+  {
+    grep -Eo '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' "$1"
+    grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}' "$1" | grep -vx '127\.0\.0\.1'
+    grep -Eio 'https?://[^[:space:]`)>"]*' "$1"
+  } | sort -u | tr '\n' ' '
+}
+
 finish() {
   printf '%d ok, %d fail(s)\n' "$PASS" "$FAIL"
   [ "$FAIL" -eq 0 ]
@@ -102,6 +116,8 @@ fi
 CHK="$SKILL_DIR/checklist.md"
 if [ -f "$CHK" ]; then
   check_checklist "$CHK" "checklist.md"
+  leaks=$(public_leaks "$CHK")
+  [ -z "$leaks" ] && ok || fail "checklist.md is public: rewrite without e-mail addresses, IPs (other than 127.0.0.1) and URLs: $leaks"
 else
   fail "checklist.md missing"
 fi
@@ -116,6 +132,28 @@ fi
 REPORT="$SKILL_DIR/report-template.html"
 if [ -f "$REPORT" ]; then
   bash "$SKILL_DIR/tests/check-report.sh" "$REPORT" >/dev/null && ok || fail "report-template.html does not pass check-report.sh"
+
+  # Regressions of check-report.sh: CSS comments are stripped only inside <style>, so a "/*" in the
+  # report's text neither cuts the rest of the report nor hides what sits before a later "*/".
+  # The fixtures are the template plus one line, built in a temporary folder removed on exit.
+  TMP=$(mktemp -d "${TMPDIR:-/tmp}/trial-by-fire-tests.XXXXXX") || { fail "mktemp -d failed"; finish; exit 1; }
+  trap 'rm -rf "$TMP"' EXIT
+  awk '{ print } /<section id="verdict">/ { print "  <p>Finding in <code>app/*.php</code>.</p>" }' \
+    "$REPORT" > "$TMP/glob.html"
+  awk '{ print } /<section id="scenarios">/ { print "  <p>Glob <code>app/*.php</code>, <img src=\"images/x.jpg\" alt=\"x\">, rule <code>*/cycle-*/images/</code>.</p>" }' \
+    "$REPORT" > "$TMP/linked.html"
+  if grep -qF 'app/*.php' "$TMP/glob.html" && grep -qF 'images/x.jpg' "$TMP/linked.html"; then
+    bash "$SKILL_DIR/tests/check-report.sh" "$TMP/glob.html" >/dev/null 2>&1 && ok \
+      || fail "check-report.sh regression: a valid report with 'app/*.php' in a finding must pass"
+    if out=$(bash "$SKILL_DIR/tests/check-report.sh" "$TMP/linked.html" 2>&1); then
+      fail "check-report.sh regression: <img src=\"images/x.jpg\"> between '/*' and '*/' in the text must fail"
+    else
+      grep -qF 'images/x.jpg' <<< "$out" && ok \
+        || fail "check-report.sh regression: the failure must name images/x.jpg (got: $out)"
+    fi
+  else
+    fail "check-report.sh regression: could not build the fixtures (section ids verdict/scenarios missing?)"
+  fi
 else
   fail "report-template.html missing"
 fi
