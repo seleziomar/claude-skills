@@ -19,14 +19,16 @@ Example:
 
 Say how to start the app and where it answers.
 - Start command, URL(s), ports, and anything about https (self-signed certificate, proxy).
-- Credential rule: the agent types a password only on a local development host (exactly `localhost`,
-  `127.0.0.1`, `*.localhost`, `*.test`) or on a host whose name carries a test marker (`staging.`, `homolog.`,
-  `dev.`, `test.`, `qa.`). A production-looking host is logged in by the human, and the agent continues in that
-  session. The agent never repeats a password in chat.
+- Credential rule (an allow-list): the agent types a password ONLY on (a) a local development host (exactly
+  `localhost`, `127.0.0.1`, `*.localhost`, `*.test`) or (b) a host whose name carries a test marker (`staging.`,
+  `homolog.`, `dev.`, `test.`, `qa.`) AND that is listed here under "Allowed hosts for typing credentials". On
+  any other host (production, a bare IP, a client demo host, anything unlisted) the human logs in, and the agent
+  continues in that session. The agent never repeats a password in chat.
+- Allowed hosts for typing credentials: list them (the local hosts above need no listing).
 
 Example:
 - Start: `docker compose up -d`. URL: `https://app.localhost` (self-signed certificate; accept it once). API on port 8080.
-- Allowed hosts for typing credentials: `app.localhost` and `staging.acme-orders.example`.
+- Allowed hosts for typing credentials: `staging.acme-orders.example` (`app.localhost` is local, so it needs no listing).
 
 ## Profiles and test users
 
