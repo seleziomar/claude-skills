@@ -99,10 +99,11 @@ Say where each cycle's evidence goes.
 - Images and HTML reports stay out of git.
 
 Example:
-- Default folder. `.gitignore`:
+- Default folder. `docs/trial-by-fire/.gitignore`:
   ```
-  docs/trial-by-fire/**/*.png
-  docs/trial-by-fire/**/*.html
+  # This file lives in docs/trial-by-fire/; the paths are relative to that folder.
+  */cycle-*/images/
+  */cycle-*/*.html
   ```
 
 ## Project dimensions

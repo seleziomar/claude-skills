@@ -33,8 +33,8 @@ the serious bug, and the serious bug does not hide the visual detail.
 - **Front 1 — brute (functional):** what corrupts data, blocks the user or leaks: writes, integrity,
   isolation, permission, server errors, async work, legacy data and the suite. The expected result is the
   behavior.
-- **Front 2 — polish (prototype):** starts when Front 1 closes with no Bug or serious Correction open (fixed,
-  or accepted by the developer). Every screen and every modal on the screen map, state by state (empty,
+- **Front 2 — polish (prototype):** starts when every Front 1 case has run with no Bug or serious Correction
+  open (fixed, or accepted by the developer). Every screen and every modal on the screen map, state by state (empty,
   loading, with a selection, error, success), next to the prototype, at 1,366, 1,600 and 1,920 px and on
   mobile: width, header, colors, typography, icons, arrows and balloons, dimmed or disabled rows, and nothing
   from the layout (fixed menu, floating widget) on top. Start by comparing the prototype's CSS with the
@@ -42,8 +42,9 @@ the serious bug, and the serious bug does not hide the visual detail.
 - Front 2 is not "an improvement for later": a case that only expects "opens" or "becomes disabled" passes
   with the screen off the prototype, and QA is the one who catches it (a tour arrow pointing away from its
   target, a wide modal under the fixed menu, modal headers, an out-of-selection row that was not dimmed).
-- A front is closed when every one of its cases ran, or when the matrix declares it N/A with a fact from the
-  code (for example, the delivery has no screen). "There is no prototype" does not close Front 2: the screen
+- A front is closed when every one of its cases ran and no Bug or Correction from it is open (fixed, or
+  accepted by the developer), or when the matrix declares it N/A with a fact from the code (for example, the
+  delivery has no screen). "There is no prototype" does not close Front 2: the screen
   is still compared with the product's existing screens (the source screen of a reused component), at the
   widths above, and its copy is reviewed.
 
@@ -148,8 +149,9 @@ the rest as gaps, and the developer chooses.
 - Through the **interface**, without asking at every step: create a user, grant a permission, switch on a
   setting, switch tenant. Prefer creating a user over touching someone else's.
 - **Credentials — an allow-list, from `## Environment`:** type a password ONLY on a local development host
-  (`localhost`, `127.0.0.1`, `*.localhost`, `*.test`) or on a test-marker host that ENVIRONMENT.md lists under
-  "Allowed hosts for typing credentials". On any other host (production, a bare IP, a client's demo, anything
+  (`localhost`, `127.0.0.1`, `*.localhost`, `*.test`) or on a host whose name carries a test marker
+  (`staging.`, `homolog.`, `dev.`, `test.`, `qa.`) AND that ENVIRONMENT.md lists under "Allowed hosts for
+  typing credentials". On any other host (production, a bare IP, a client's demo, anything
   unlisted) the human logs in, and you continue in that session. Take credentials from where
   `## Profiles and test users` says. **Never repeat a password** in chat, in a file or in the report.
 - **Never change the password of an account you did not create.** Need another user → create it through the
@@ -217,11 +219,13 @@ the rest as gaps, and the developer chooses.
 
 - The delivery's tests run on any machine: no fixed seed ids and **no skip**.
 - Start the full suite at the **start of Phase 3**, in the background, with the command from `## Test suite`,
-  on the delivery commit, so it runs while you test the screen.
+  on the delivery commit, so it runs while you test the screen (only when it is isolated; see below).
   - Isolate it from the UI's data when the project allows (its own database or schema, or its own worktree, as
     ENVIRONMENT.md says). A suite that shares the database with the screen produces false failures on both
     sides: a lock timeout on the screen, a false server error, a test broken because the screen switched the
     active tenant.
+  - If the project offers no isolation, do not run it at the same time as the screen: run it before or after
+    Phase 3, and say so in the report.
   - Never two suite runs on the same database at the same time (spurious deadlocks and failures).
   - A worktree or database made for the suite is removed at the end, with its line in the inventory.
   - A CI run counts only when `## Test suite` says the suite runs there and the run is of the exact commit
@@ -301,10 +305,10 @@ there (verdict, counts, where the report is).
 | "Stopping for the matrix spends the minutes I have to test" | The matrix decides WHERE the minutes go. Without time, show the slice that fits; do not skip the stop. |
 | "I'll build the matrix in the final report, from what I tested" | A matrix built afterwards only lists what you chose to test; what was left out never shows. It comes first. |
 | "Out of scope by the developer's decision" | Someone's word is not a reason. The reason is a fact from the code ("does not read the tenant", "no permission check"), checked. If the code does it, the dimension applies, and the developer decides knowing that. |
-| "The suite takes 30 minutes and does not fit the deadline; it goes as a recommendation" | It runs in the background, isolated, while you test the screen. Without the suite, the verdict is "not ready". |
+| "The suite takes 30 minutes and does not fit the deadline; it goes as a recommendation" | When the project isolates it, it runs in the background while you test the screen; otherwise it runs before or after Phase 3. Without the suite, the verdict is "not ready". |
 | "There is no ENVIRONMENT.md; I'll infer the commands and go" | Build the draft from the template and the repository, ask the single round of questions, and write it only after the OK. |
 | "A quick script or console will create this data" | Data goes through the screen; what the screen cannot reach, the user cannot reach either. Direct writes only where ENVIRONMENT.md or the developer allows, and into the inventory. |
-| "It's only a demo host; I can type the password" | Only local hosts and the hosts on the allow-list. Anywhere else, the human logs in. |
+| "It's only a demo host; I can type the password" | Only local hosts, and listed hosts with a test marker in the name. A client demo host never qualifies. Anywhere else, the human logs in. |
 | "The QA's automation suite (or a direct route) gets there faster" | It sets state a user cannot. The case is proven by a click on the visible control, with a screenshot. |
 | "The skills repository is probably at …" | Do not guess. Read `## Skills repo clone`; not there, ask. Without a clone, the lesson goes to the project's checklist. |
 | "Bump the minor version" | An example or a class in the checklist = patch. Minor is a new skill. |
@@ -317,6 +321,7 @@ there (verdict, counts, where the report is).
   or a short deadline.
 - A matrix missing the N/A row of some dimension, including the project dimensions.
 - A "ready" report without the suite, without Front 2, or with the inventory open.
+- A "ready" report with a Bug or Correction open (neither fixed nor accepted by the developer).
 - Starting Front 2 with a Bug or serious Correction from Front 1 still open.
 - Driving the screen with the QA's automation suite, an internal route or a script that sets state.
 - Typing a password on a host outside the allow-list, or repeating a password anywhere.
