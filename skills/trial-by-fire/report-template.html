@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="report" content="trial-by-fire">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trial by fire — cycle 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com/">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #f5f7fa; --surface: #ffffff; --fg: #1d2733; --muted: #5b6878; --line: #dde3ea;
+  --accent: #0e8fdc; --ok: #1f8a4c; --ok-bg: #e5f4eb; --warn: #9a5b00; --warn-bg: #fdf1dc;
+  --bad: #b3261e; --bad-bg: #fbe9e7; --proto: #7a4fb8; --proto-bg: #f0eafa;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #19212a; --fg: #e3e9f0; --muted: #98a6b5; --line: #2a3541;
+    --accent: #4db3f2; --ok: #5cc98a; --ok-bg: #16301f; --warn: #f0b356; --warn-bg: #33270f;
+    --bad: #f28b82; --bad-bg: #3a1a18; --proto: #b597e6; --proto-bg: #2a2138; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #19212a; --fg: #e3e9f0; --muted: #98a6b5; --line: #2a3541;
+  --accent: #4db3f2; --ok: #5cc98a; --ok-bg: #16301f; --warn: #f0b356; --warn-bg: #33270f;
+  --bad: #f28b82; --bad-bg: #3a1a18; --proto: #b597e6; --proto-bg: #2a2138; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; margin: 0; }
+.page { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 32px 64px; display: grid; gap: 40px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; line-height: 1.25; }
+h1 { font-size: 1.9rem; font-weight: 700; } h2 { font-size: 1.35rem; font-weight: 600; } h3 { font-size: 1.02rem; font-weight: 600; }
+p { margin: 0; max-width: 72ch; }
+code, .mono { font-family: var(--font-mono); font-size: .86em; overflow-wrap: anywhere; }
+.eyebrow { font-family: var(--font-mono); font-size: .76rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+a { color: var(--accent); }
+header { display: grid; gap: 14px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 22px; color: var(--muted); font-size: .88rem; }
+.meta b { color: var(--fg); font-weight: 500; }
+section { display: grid; gap: 18px; }
+.verdict { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; display: grid; gap: 8px; min-width: 0; }
+.card .top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.card p { font-size: .92rem; color: var(--muted); }
+.pill { font-family: var(--font-mono); font-size: .74rem; font-weight: 500; letter-spacing: .04em; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.pill.bad { background: var(--bad-bg); color: var(--bad); }
+.pill.proto { background: var(--proto-bg); color: var(--proto); }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-weight: 600; color: var(--muted); font-size: .82rem; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 18px; display: grid; gap: 14px; }
+.step .head { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; justify-content: space-between; }
+.step .head .t { display: grid; gap: 4px; min-width: 0; flex: 1 1 420px; }
+.step .id { font-family: var(--font-mono); font-size: .8rem; color: var(--accent); font-weight: 500; }
+.step .action { color: var(--muted); font-size: .92rem; }
+.expected { font-size: .9rem; border-left: 3px solid var(--line); padding-left: 10px; max-width: 80ch; }
+.shots { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+figure { margin: 0; display: grid; gap: 6px; min-width: 0; }
+figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); }
+figcaption { display: flex; gap: 8px; align-items: center; font-size: .84rem; color: var(--muted); flex-wrap: wrap; }
+ul.list { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 80ch; }
+</style>
+</head>
+<body>
+<main class="page">
+<header>
+  <span class="eyebrow">Trial by fire · cycle N</span>
+  <h1>TICKET-ID — name of the delivery</h1>
+  <div class="meta"><span>Branch <b>feature/example-checkout</b></span><span>Base <b>merge-base</b></span><span>Date <b>YYYY-MM-DD</b></span><span>Environment <b>local app · browser automation</b></span></div>
+</header>
+
+<section id="verdict">
+  <h2>Verdict</h2>
+  <div class="verdict">
+    <!-- repeat: one card per key number. Ready only with both fronts closed and the suite run -->
+    <div class="card"><div class="top"><h3>Verdict: ready / not ready for QA</h3><span class="pill ok">READY</span></div><p>N cases, N findings, coverage X/Y requirements, suite run.</p></div>
+  </div>
+</section>
+
+<section id="matrix">
+  <h2>Dimension matrix</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Dimension</th><th>Verdict</th><th>Reason</th><th>Proof</th></tr></thead>
+    <tbody>
+      <!-- repeat: one row per dimension; N/A rows stay, with the reason -->
+      <tr><td>Locales</td><td><span class="pill warn">N/A</span></td><td>the code never reads the locale</td><td>—</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="cases">
+  <h2>Cases and coverage</h2>
+  <p>Coverage: <b>X/Y</b> requirements. Gaps: …</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Case</th><th>Source</th><th>Checklist class</th><th>Result</th></tr></thead>
+    <tbody>
+      <!-- repeat -->
+      <tr><td>C01 — guest user adds an item to the cart</td><td>REQ-01</td><td>Screen differs from the design</td><td><span class="pill ok">OK</span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="scenarios">
+  <h2>Scenarios in the order they ran</h2>
+  <!-- repeat: one .step per case -->
+  <article class="step">
+    <div class="head"><div class="t"><span class="id">C01</span><h3>Scenario title</h3><p class="action">Menu → Screen → action</p></div><span class="pill ok">OK</span></div>
+    <p class="expected"><b>Expected:</b> … · <b>Actual:</b> …</p>
+    <div class="shots">
+      <figure><img src="data:image/jpeg;base64,..." alt="System"><figcaption><span class="pill ok">SYSTEM</span>caption</figcaption></figure>
+      <figure><img src="data:image/jpeg;base64,..." alt="Design"><figcaption><span class="pill proto">DESIGN</span>caption</figcaption></figure>
+    </div>
+  </article>
+</section>
+
+<section id="unmapped">
+  <h2>Unmapped cases — raised during development</h2>
+  <ul class="list"><!-- repeat --><li>…</li></ul>
+</section>
+
+<section id="suite">
+  <h2>Suite</h2>
+  <p>N files · N failures · attribution: …</p>
+</section>
+
+<section id="findings">
+  <h2>Findings</h2>
+  <div class="verdict">
+    <!-- repeat: classification Bug / Fix / Requirement divergence / Improvement -->
+    <div class="card"><div class="top"><h3>Finding title</h3><span class="pill bad">BUG</span></div><p>Steps · expected vs actual · <code>path/to/file:line</code></p></div>
+  </div>
+</section>
+
+<section id="inventory">
+  <h2>Revert inventory</h2>
+  <ul class="list"><!-- repeat --><li>user … created — <span class="pill ok">REVERTED</span></li></ul>
+</section>
+</main>
+</body>
+</html>
