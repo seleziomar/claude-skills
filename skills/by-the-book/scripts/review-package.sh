@@ -362,6 +362,10 @@ emit_readmap() {
 }
 
 # ---------------------------------------------------------------- collect the diff
+# The diff is parsed, so the user's git config must not shape it: `color.ui=always` fills it with
+# escape codes, `diff.noprefix` and `diff.mnemonicPrefix` change the `a/` and `b/` prefixes the
+# parsers rely on, an external diff driver or textconv replaces the content.
+DIFF_OPTS="--no-color --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/"
 BASE_LABEL=""
 HEAD_LABEL=""
 HEAD_SHA=""
@@ -384,8 +388,9 @@ elif [ "$MODE" = range ]; then
     warn "no merge-base between '$BASE' and '$HEAD_REF' (unrelated histories) — comparing directly with '$BASE'"
     MB="$BASE"
   fi
-  git -c core.quotePath=false diff --name-only "$MB" "$HEAD_SHA" > "$FILES" || die "git diff --name-only failed"
-  git -c core.quotePath=false diff "$MB" "$HEAD_SHA" > "$DIFF" || die "git diff failed"
+  git -c core.quotePath=false diff --no-color --name-only "$MB" "$HEAD_SHA" > "$FILES" || die "git diff --name-only failed"
+  # shellcheck disable=SC2086  # DIFF_OPTS holds several flags
+  git -c core.quotePath=false diff $DIFF_OPTS "$MB" "$HEAD_SHA" > "$DIFF" || die "git diff failed"
   BASE_LABEL="$BASE (merge-base $(git rev-parse --short "$MB"))"
   HEAD_LABEL="$HEAD_REF ($(git rev-parse --short "$HEAD_SHA"))"
 else
@@ -405,11 +410,12 @@ else
     warn "no merge-base between '$BASE' and HEAD (unrelated histories) — comparing directly with '$BASE'"
     MB="$BASE"
   fi
-  git -c core.quotePath=false diff --name-only "$MB" > "$FILES" || die "git diff --name-only failed"
+  git -c core.quotePath=false diff --no-color --name-only "$MB" > "$FILES" || die "git diff --name-only failed"
   # The same flag as the --name-only above: without it, a path with a non-ASCII byte (common in
   # Portuguese file names) comes out quoted and escaped in the header ("a/A\303\247..."), which
   # breaks the path parsing in filter_diff and lets the file escape the exclusion filter.
-  git -c core.quotePath=false diff "$MB" > "$DIFF" || die "git diff failed"
+  # shellcheck disable=SC2086  # DIFF_OPTS holds several flags
+  git -c core.quotePath=false diff $DIFF_OPTS "$MB" > "$DIFF" || die "git diff failed"
   git -c core.quotePath=false ls-files --others --exclude-standard > "$UNTRACKED"
   BASE_LABEL="$BASE (merge-base $(git rev-parse --short "$MB"))"
 fi
@@ -517,7 +523,7 @@ CANDS
   if [ -n "$best" ]; then
     best_mb=$(git merge-base "$best" HEAD 2>/dev/null)
     if [ -n "$best_mb" ]; then
-      best_files=$(git -c core.quotePath=false diff --name-only "$best_mb" | grep -c .)
+      best_files=$(git -c core.quotePath=false diff --no-color --name-only "$best_mb" | grep -c .)
       if [ "${best_files:-0}" -lt "$N_FILES" ]; then
         warn "tighter base available: '$best' gives $best_files files ($best_n commits) against the $N_FILES of '$BASE' ($cur_n commits) — this branch seems to have come from '$best', not from '$BASE'. Confirm with the user and run again with: --base $best"
       fi
@@ -563,13 +569,14 @@ rule_patterns() {
   ' "$1"
 }
 
-# 0 = the frontmatter declares a `paths:` key
+# 0 = the frontmatter declares a `paths:` key. The status is set in END only: an `exit` in a
+# main rule jumps to END, and an `exit` there overrides it.
 has_paths_key() {
   awk '
-    NR==1 { if ($0 != "---") exit 1; next }
-    $0 == "---" { exit 1 }
-    /^paths:/ { exit 0 }
-    END { exit 1 }
+    NR==1 { if ($0 != "---") exit; next }
+    $0 == "---" { exit }
+    /^paths:/ { found = 1; exit }
+    END { exit !found }
   ' "$1"
 }
 
@@ -736,6 +743,7 @@ N_SCOPE_CODE=$(grep -c . "$SCOPE_CODE");   N_SCOPE_CODE=${N_SCOPE_CODE:-0}
 CLAUDE_MDS="$OUT/claude_mds.txt"
 {
   [ -f CLAUDE.md ] && printf 'CLAUDE.md\n'
+  [ -f .claude/CLAUDE.md ] && printf '.claude/CLAUDE.md\n'
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     d=$(dirname "$f")

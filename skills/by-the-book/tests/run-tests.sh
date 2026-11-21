@@ -1176,6 +1176,82 @@ test_empty_diff_hints_range_mode() {
   rm -rf "$r"
 }
 
+# Regression: has_paths_key always returned 1 (awk's END overrode the `exit 0`), so a rule with an
+# inline list (`paths: ["app/**"]`) silently became a global-scope rule, applied to every changed
+# file, with no warning saying why.
+test_inline_paths_list_warns() {
+  local r out
+  r=$(mkfixture)
+  mkdir -p "$r/.claude/rules" "$r/app"
+  printf -- '---\npaths: ["app/**"]\n---\nAn inline list.\n' > "$r/.claude/rules/inline.md"
+  printf '<?php class Foo {}\n' > "$r/app/Foo.php"
+  git -C "$r" add -A && git -C "$r" commit -qm base
+  git -C "$r" checkout -qb feat
+  printf '<?php class Foo { public function x() {} }\n' > "$r/app/Foo.php"
+  out=$(run_build "$r" --base main)
+  assert_contains 'only YAML block lists are supported' "$(section_of 'WARNINGS' "$out")" \
+    'inline-paths: an inline paths list is reported instead of silently going global'
+  rm -rf "$r"
+}
+
+# Regression: the user's git config reached the diff the script parses. `color.ui=always` filled
+# it with escape codes (every file came out "no hunk"), `diff.noprefix` cut two characters off
+# every path and let excluded files leak into the frozen diff.
+test_user_diff_config_is_ignored() {
+  local r out map diffbody x y root
+  r=$(mkfixture)
+  mkdir -p "$r/app"
+  printf '{ "packages": [] }\n' > "$r/composer.lock"
+  awk 'BEGIN { print "<?php"; for (i = 2; i <= 600; i++) print "// line " i }' > "$r/app/Big.php"
+  git -C "$r" add -A && git -C "$r" commit -qm base
+  x=$(git -C "$r" rev-parse HEAD)
+  git -C "$r" config color.ui always
+  git -C "$r" config color.diff always
+  git -C "$r" config diff.noprefix true
+  git -C "$r" config diff.mnemonicPrefix true
+  git -C "$r" checkout -qb feat
+  printf '{ "packages": ["new"] }\n' > "$r/composer.lock"
+  awk 'NR == 300 { print "// TOUCHED"; next } { print }' "$r/app/Big.php" > "$r/t" && mv "$r/t" "$r/app/Big.php"
+
+  out=$(run_build "$r" --base main)
+  map=$(section_of 'READ MAP' "$out" | grep -F 'app/Big.php')
+  diffbody=$(cat "$(printf '%s' "$out" | awk '/^DIFF: /{print $2}')")
+  if printf '%s' "$map" | grep -qE '600 \| 29[0-9]-30[0-9]'; then ok
+  else fail "diff-config: the read map lost the range of app/Big.php under the user's diff config: $map"; fi
+  assert_not_contains 'packages' "$diffbody" "diff-config: an excluded file leaks into the frozen diff under the user's diff config"
+
+  git -C "$r" add -A && git -C "$r" commit -qm change
+  y=$(git -C "$r" rev-parse HEAD)
+  out=$(run_build "$r" --base "$x" --head "$y")
+  root=$(code_root_of "$out")
+  map=$(section_of 'READ MAP' "$out" | grep -F 'app/Big.php')
+  if printf '%s' "$map" | grep -qE '600 \| 29[0-9]-30[0-9]'; then ok
+  else fail "diff-config: the range-mode read map lost the range under the user's diff config: $map"; fi
+  run_build "$r" --cleanup "$root" >/dev/null
+  rm -rf "$r"
+}
+
+# .claude/CLAUDE.md is a documented place for project instructions. A repository that keeps its
+# conventions only there got "no applicable rule and no CLAUDE.md" and lost the rules agent.
+test_dot_claude_claude_md_is_found() {
+  local r out
+  r=$(mkfixture)
+  mkdir -p "$r/.claude" "$r/app"
+  printf '# Conventions\n' > "$r/.claude/CLAUDE.md"
+  printf '<?php class Foo {}\n' > "$r/app/Foo.php"
+  git -C "$r" add -A && git -C "$r" commit -qm base
+  git -C "$r" checkout -qb feat
+  printf '<?php class Foo { public function x() {} }\n' > "$r/app/Foo.php"
+  out=$(run_build "$r" --base main)
+  assert_contains '.claude/CLAUDE.md' "$(section_of 'CLAUDE.md' "$out")" 'dot-claude: .claude/CLAUDE.md is listed'
+  assert_not_contains 'no applicable rule and no CLAUDE.md' "$out" 'dot-claude: the rules agent is not skipped'
+  rm -rf "$r"
+}
+
+test_inline_paths_list_warns
+test_user_diff_config_is_ignored
+test_dot_claude_claude_md_is_found
+
 test_code_root_in_every_output
 test_test_rules_lists_unmatched_test_rule
 test_test_rules_none
