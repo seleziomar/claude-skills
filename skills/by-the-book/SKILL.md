@@ -90,11 +90,12 @@ tool lists, dispatch them by `subagent_type`. Do not pass `model`: the agent fil
 measured one, and the call parameter overrides it.
 
 **Fallback path:** when they are not listed (the skill was installed with `npx skills`, copied or
-unzipped, without the plugin), or a call fails with "agent type not found", tell the user once,
-before dispatching: the plugin agents are not installed, so the review runs on `general-purpose`
-agents, at about 20–30% more cost and without the read-only lock; installing the plugin from the
-marketplace avoids it. Then dispatch three `general-purpose` agents, pass `model` from the table,
-and start each prompt with these lines, followed by the context block:
+unzipped, without the plugin), or a call fails with "agent type not found". The user must know,
+because it costs more: write this fallback line as text in the same message as the `Agent` calls,
+and repeat it in the report (step 4): *the plugin agents are not installed, so this review runs on
+`general-purpose` agents, at about 20–30% more cost and without their read-only lock; installing
+the plugin from the marketplace avoids it.* Then dispatch three `general-purpose` agents, pass
+`model` from the table, and start each prompt with these lines, followed by the context block:
 
 ```
 Read <skill-dir>/agents/<agent file>. Everything after its frontmatter is your instructions for
@@ -137,6 +138,7 @@ Then **one** `ReportFindings` call:
   defect are **one** finding listing the eleven;
 - in range mode, say once that line numbers refer to commit `B` (the `HEAD` of the summary), not to
   today's files;
+- on the fallback path, the report opens with the fallback line of step 2;
 - do not repeat the findings as prose afterwards.
 
 Without a `ReportFindings` tool, print the same entries as a numbered list, in the same order, each

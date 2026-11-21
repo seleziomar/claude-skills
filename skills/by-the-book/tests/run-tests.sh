@@ -1684,10 +1684,16 @@ test_doclint_skill_agent_table() {
 test_doclint_skill_fallback() {
   local c n
   c=$(cat "$SKILLMD" 2>/dev/null)
-  for n in 'Fallback path' '`general-purpose`' 'pass `model`' '20–30%' 'tell the user once' \
+  for n in 'Fallback path' '`general-purpose`' 'pass `model`' '20–30%' \
+           'in the same message as the `Agent` calls' \
            'Everything after its frontmatter is your instructions'; do
     assert_contains "$n" "$c" 'skill: fallback path'
   done
+  # Regression: in an end-to-end run the orchestrator dispatched the fallback agents without a
+  # word of text, so the user never learned the review cost more and had no read-only lock. The
+  # report always has text: the warning is repeated there.
+  assert_contains 'on the fallback path, the report opens with the fallback line' "$c" \
+    'skill: the report repeats the fallback warning'
 }
 
 test_doclint_skill_plugin_path() {
