@@ -1069,5 +1069,120 @@ test_without_out_stdout_is_the_manifest
 test_out_empty_diff
 test_out_invalid_destination
 
+# ------------------------------------------------------------- code root and test rules
+# The agents need one instruction for where code lives in every mode, so CODE ROOT is printed
+# in local and PR mode too (the repository root there).
+test_code_root_in_every_output() {
+  local r m out man root
+  r=$(fixture_with_rule)
+  m="$r.manifest"
+  root=$(cd "$r" && pwd -P)
+  out=$(run_build "$r" --base main --out "$m")
+  man=$(cat "$m" 2>/dev/null)
+  assert_contains "CODE ROOT: $root" "$out" 'code-root: the summary names the code root'
+  assert_contains "CODE ROOT: $root" "$man" 'code-root: the manifest names the code root'
+  rm -rf "$r" "$m"
+}
+
+# The coverage pass looks for the project's written test policy. A diff that touches no test
+# file never lists the test rules under APPLICABLE RULES, so TEST RULES lists them anyway.
+test_test_rules_lists_unmatched_test_rule() {
+  local r out tr ar
+  r=$(mkfixture)
+  mkdir -p "$r/.claude/rules" "$r/app" "$r/tests"
+  cat > "$r/.claude/rules/testing.md" <<'RULE'
+---
+paths:
+  - "tests/**/*.php"
+---
+Every back-end change ships with a test that fails without it.
+RULE
+  printf '<?php class Foo {}\n'     > "$r/app/Foo.php"
+  printf '<?php class FooTest {}\n' > "$r/tests/FooTest.php"
+  git -C "$r" add -A && git -C "$r" commit -qm base
+  git -C "$r" checkout -qb feat
+  printf '<?php class Foo { public function x() {} }\n' > "$r/app/Foo.php"
+
+  out=$(run_build "$r" --base main)
+  tr=$(section_of 'TEST RULES' "$out")
+  ar=$(section_of 'APPLICABLE RULES' "$out")
+  assert_contains 'TEST RULES (1)' "$tr" 'test-rules: counts the test rule'
+  assert_contains '.claude/rules/testing.md' "$tr" 'test-rules: lists a test rule the diff does not match'
+  assert_not_contains 'testing.md' "$ar" 'test-rules: the rule is still not an applicable rule'
+  rm -rf "$r"
+}
+
+test_test_rules_none() {
+  local r out
+  r=$(fixture_with_rule)
+  out=$(run_build "$r" --base main)
+  assert_contains '(none)' "$(section_of 'TEST RULES' "$out")" 'test-rules: an empty section says (none)'
+  rm -rf "$r"
+}
+
+# ------------------------------------------------------------- bases without a remote
+# A project that lives only on the developer's machine has no origin at all: the base falls
+# back to the local main or master.
+test_base_without_remote_is_main() {
+  local r out
+  r=$(fixture_with_rule)
+  out=$(run_build "$r")
+  assert_contains 'BASE: main (merge-base' "$out" 'no-remote: the base is the local main'
+  rm -rf "$r"
+}
+
+test_base_without_remote_is_master() {
+  local r out
+  r=$(mktemp -d)
+  git -C "$r" init -q -b master
+  git -C "$r" config user.email t@example.com
+  git -C "$r" config user.name t
+  printf 'initial\n' > "$r/README.md"
+  git -C "$r" add -A && git -C "$r" commit -qm initial
+  git -C "$r" checkout -qb feat
+  printf 'changed\n' > "$r/README.md"
+  out=$(run_build "$r")
+  assert_contains 'BASE: master (merge-base' "$out" 'no-remote: the base is the local master'
+  rm -rf "$r"
+}
+
+test_no_base_at_all_fails() {
+  local r st out
+  r=$(mktemp -d)
+  git -C "$r" init -q -b trunk
+  git -C "$r" config user.email t@example.com
+  git -C "$r" config user.name t
+  printf 'initial\n' > "$r/README.md"
+  git -C "$r" add -A && git -C "$r" commit -qm initial
+  printf 'changed\n' > "$r/README.md"
+  st=$(run_build_status "$r")
+  if [ "$st" = 1 ]; then ok
+  else fail "no-remote: without main, master or origin the script should exit 1, got $st"; fi
+  out=$(run_build "$r")
+  assert_contains '--base' "$out" 'no-remote: the error tells to pass --base'
+  rm -rf "$r"
+}
+
+# On main with nothing uncommitted there is nothing to review locally; the user who wanted past
+# commits learns how to ask for them.
+test_empty_diff_hints_range_mode() {
+  local r st out
+  r=$(mkfixture)
+  st=$(run_build_status "$r")
+  if [ "$st" = 3 ]; then ok
+  else fail "hint: an empty diff on main should exit 3, got $st"; fi
+  out=$(run_build "$r")
+  assert_contains '--base <A> --head <B>' "$out" 'hint: the empty-diff message points to range mode'
+  rm -rf "$r"
+}
+
+test_code_root_in_every_output
+test_test_rules_lists_unmatched_test_rule
+test_test_rules_none
+test_base_without_remote_is_main
+test_base_without_remote_is_master
+test_no_base_at_all_fails
+test_empty_diff_hints_range_mode
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

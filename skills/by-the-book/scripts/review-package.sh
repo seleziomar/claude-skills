@@ -72,6 +72,8 @@ fi
 git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository"
 REPO_ROOT=$(git rev-parse --show-toplevel) || die "could not find the repository root"
 cd "$REPO_ROOT" || die "could not enter $REPO_ROOT"
+# Where the agents read code. The repository root, except in range mode.
+CODE_ROOT="$REPO_ROOT"
 
 OUT=$(mktemp -d) || die "mktemp failed"
 DIFF="$OUT/review.diff"
@@ -430,6 +432,15 @@ CAND="$OUT/candidates.txt"
 cat "$FILES" "$UNTRACKED" | grep . | sort -u > "$CAND"
 
 # ---------------------------------------------------------------------- rules
+# Recognizes a rule GLOB as a "test" glob. ANCHORED on a path component or a file-name suffix —
+# never a loose substring. A `grep -E 'test|spec'` over the whole pattern classified
+# `app/Perspectiva/**/*.php` as a test (Per-SPEC-tiva) and `app/Espectro/**` too
+# (E-SPEC-tro): in a Portuguese codebase "perspectiva", "espectro" and "especificacao"
+# are common words, and the effect was throwing production code into the test scope and leaving
+# bugs and security with an EMPTY scope, with no warning.
+# The suffixes stay case-sensitive on purpose: with `-i`, `test\.` would match `latest.php`.
+TEST_GLOB_RE='(^|/)([Tt]ests?|[Ss]pecs?|__[Tt]ests__)(/|$)|(Test|Spec|_test|_spec|\.test|\.spec)\.[^/]*$'
+
 # Extracts the `paths:` patterns from the frontmatter. YAML block list only:
 #   ---
 #   paths:
@@ -507,6 +518,10 @@ ALL_TRACKED=""   # filled on demand, only for the dead-rule diagnosis
 # to be in the diff. See the "scope per agent" block.
 ALL_RULE_PATS="$OUT/rule_pats_all.txt";  : > "$ALL_RULE_PATS"
 
+# Rules that declare a test glob, whether or not they matched this diff: the coverage pass
+# reads the project's written test policy there, even when the diff touches no test file.
+RULES_TEST="$OUT/rules_test.txt";       : > "$RULES_TEST"
+
 if [ -d .claude/rules ]; then
   RULE_FILES=$(find .claude/rules -type f -name '*.md' | sort)
   [ -n "$RULE_FILES" ] || warn ".claude/rules/ exists but has no .md file"
@@ -524,6 +539,7 @@ if [ -d .claude/rules ]; then
     # Before any matching: the test classification reads ALL the rules, including the ones this
     # diff does not touch. A rule without `paths:` contributes no glob.
     printf '%s\n' "$pats" >> "$ALL_RULE_PATS"
+    if printf '%s\n' "$pats" | grep -qE "$TEST_GLOB_RE"; then printf '%s\n' "$rf" >> "$RULES_TEST"; fi
 
     # `set -f` at the top of the script keeps these patterns from pathname expansion.
     # shellcheck disable=SC2086  # we want word splitting of the patterns
@@ -579,14 +595,6 @@ fi
 SCOPE_TESTS="$OUT/scope_tests.txt"
 SCOPE_CODE="$OUT/scope_code.txt"
 
-# Recognizes a rule GLOB as a "test" glob. ANCHORED on a path component or a file-name suffix —
-# never a loose substring. A `grep -E 'test|spec'` over the whole pattern classified
-# `app/Perspectiva/**/*.php` as a test (Per-SPEC-tiva) and `app/Espectro/**` too
-# (E-SPEC-tro): in a Portuguese codebase "perspectiva", "espectro" and "especificacao"
-# are common words, and the effect was throwing production code into the test scope and leaving
-# bugs and security with an EMPTY scope, with no warning.
-# The suffixes stay case-sensitive on purpose: with `-i`, `test\.` would match `latest.php`.
-TEST_GLOB_RE='(^|/)([Tt]ests?|[Ss]pecs?|__[Tt]ests__)(/|$)|(Test|Spec|_test|_spec|\.test|\.spec)\.[^/]*$'
 
 # The test globs come from ALL the rules of the repository ($ALL_RULE_PATS), not only the ones
 # that matched this diff. Reading only the matched ones, a diff that touched no test — the
@@ -647,6 +655,7 @@ N_CLAUDE=$(grep -c . "$CLAUDE_MDS"); N_CLAUDE=${N_CLAUDE:-0}
 # section announces is RULES, so the count is of distinct rules.
 N_RULES=$(cut -f1 "$RULES_MATCHED" | sort -u | grep -c .); N_RULES=${N_RULES:-0}
 N_GLOBAL=$(grep -c . "$RULES_GLOBAL");  N_GLOBAL=${N_GLOBAL:-0}
+N_TEST_RULES=$(grep -c . "$RULES_TEST"); N_TEST_RULES=${N_TEST_RULES:-0}
 
 # The actionable condition is not "the directory is missing", it is "nothing is left to review
 # against" — an empty .claude/rules/ is the same as none.
@@ -661,6 +670,7 @@ N_WARN=$(grep -c . "$WARN");            N_WARN=${N_WARN:-0}
 emit_manifest() {
   printf 'MODE: %s\n' "$MODE"
   printf 'REPO: %s\n' "$REPO_ROOT"
+  printf 'CODE ROOT: %s\n' "$CODE_ROOT"
   printf 'BASE: %s\n' "$BASE_LABEL"
   printf 'DIFF: %s (%s lines)\n' "$DIFF" "$N_DIFF"
   printf 'FINGERPRINT: %s\n' "$FINGERPRINT"
@@ -700,6 +710,9 @@ emit_manifest() {
   printf '\nCLAUDE.md (%s)\n' "$N_CLAUDE"
   if [ "$N_CLAUDE" -gt 0 ]; then cat "$CLAUDE_MDS"; else printf '(none)\n'; fi
 
+  printf '\nTEST RULES (%s) — rules that declare a test glob: where the written test policy lives\n' "$N_TEST_RULES"
+  if [ "$N_TEST_RULES" -gt 0 ]; then cat "$RULES_TEST"; else printf '(none)\n'; fi
+
   printf '\nCODE SCOPE (non-test) (%s) — agents review-bugs and review-security-coverage\n' "$N_SCOPE_CODE"
   if [ "$N_SCOPE_CODE" -gt 0 ]; then cat "$SCOPE_CODE"; else printf '(none)\n'; fi
 
@@ -717,6 +730,7 @@ emit_manifest() {
 emit_summary() {
   printf 'MODE: %s\n' "$MODE"
   printf 'REPO: %s\n' "$REPO_ROOT"
+  printf 'CODE ROOT: %s\n' "$CODE_ROOT"
   printf 'BASE: %s\n' "$BASE_LABEL"
   printf 'DIFF: %s (%s lines)\n' "$DIFF" "$N_DIFF"
   printf 'FINGERPRINT: %s\n' "$FINGERPRINT"
@@ -746,7 +760,7 @@ else
 fi
 
 if [ "$N_FILES" -eq 0 ] && [ "$N_UNTRACKED" -eq 0 ]; then
-  printf '\nNOTHING TO REVIEW: the diff is empty.\n'
+  printf '\nNOTHING TO REVIEW: the diff is empty. To review past commits, use --base <A> --head <B>.\n'
   exit 3
 fi
 exit 0
