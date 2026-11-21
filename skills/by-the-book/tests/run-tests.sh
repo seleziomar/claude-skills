@@ -1646,5 +1646,99 @@ test_doclint_review_security_coverage
 test_doclint_agents_use_code_root
 test_doclint_agents_no_project_data
 
+# ------------------------------------------------------------------- doc-lint: SKILL.md
+SKILLMD="$SKILL_DIR/SKILL.md"
+
+test_doclint_skill_frontmatter() {
+  local fm n
+  if [ -f "$SKILLMD" ]; then ok; else fail "skill: $SKILLMD does not exist"; return; fi
+  fm=$(frontmatter_of "$SKILLMD")
+  assert_contains 'name: by-the-book' "$fm" 'skill: name'
+  for n in 'by the book' 'review my diff' 'revisa meu diff' 'commits' '.claude/rules' 'CLAUDE.md'; do
+    assert_contains "$n" "$fm" 'skill: the description carries its trigger'
+  done
+}
+
+test_doclint_skill_steps() {
+  local c h
+  c=$(cat "$SKILLMD" 2>/dev/null)
+  for h in '## 1. Build the review package' '## 2. Dispatch the three agents' \
+           '## 3. Check the fingerprint' '## 4. Report' '## 5. Gate' '## 6. Clean up'; do
+    assert_contains "$h" "$c" 'skill: has its step'
+  done
+}
+
+# The fallback path passes the model from this table; the plugin path takes it from the agent
+# file. The two must agree, so the row is built from the agent's own frontmatter.
+test_doclint_skill_agent_table() {
+  local c f name
+  c=$(cat "$SKILLMD" 2>/dev/null)
+  for f in "$RULES_AGENT" "$BUGS_AGENT" "$SECCOV_AGENT"; do
+    name=$(basename "$f" .md)
+    assert_contains "| \`by-the-book:$name\` | \`$(model_of "$f")\` |" "$c" \
+      "skill: the table row of $name carries the model of its agent file"
+    assert_contains "\`agents/$name.md\`" "$c" "skill: the table names the file of $name"
+  done
+}
+
+test_doclint_skill_fallback() {
+  local c n
+  c=$(cat "$SKILLMD" 2>/dev/null)
+  for n in 'Fallback path' '`general-purpose`' 'pass `model`' '20–30%' 'tell the user once' \
+           'Everything after its frontmatter is your instructions'; do
+    assert_contains "$n" "$c" 'skill: fallback path'
+  done
+}
+
+test_doclint_skill_plugin_path() {
+  local c
+  c=$(cat "$SKILLMD" 2>/dev/null)
+  assert_contains 'Plugin path' "$c" 'skill: plugin path'
+  assert_contains 'Do not pass `model`' "$c" 'skill: no model on the plugin path'
+  assert_contains 'On the plugin path, dispatching `general-purpose`' "$c" 'skill: red flag for general-purpose on the plugin path'
+  assert_contains 'in one message' "$c" 'skill: the three agents go in one message'
+}
+
+test_doclint_skill_range() {
+  local c
+  c=$(cat "$SKILLMD" 2>/dev/null)
+  assert_contains '--base <A> --head <B>' "$c" 'skill: range mode'
+  assert_contains '--cleanup' "$c" 'skill: range cleanup'
+  assert_contains 'line numbers refer to commit' "$c" 'skill: the report says which commit the lines refer to'
+  assert_contains 'Skipped in range mode' "$c" 'skill: no fingerprint check in range mode'
+}
+
+test_doclint_skill_report() {
+  local c
+  c=$(cat "$SKILLMD" 2>/dev/null)
+  assert_contains '`verdict`' "$c" 'skill: verdict is addressed'
+  assert_contains 'Filling `verdict`' "$c" 'skill: red flag for verdict'
+  assert_contains '60 characters' "$c" 'skill: short_summary limit'
+  assert_contains '`high`, then `medium`, then `low`' "$c" 'skill: severity order'
+  assert_contains 'numbered list' "$c" 'skill: report without ReportFindings'
+  assert_contains 'finding by finding' "$c" 'skill: the gate is per finding'
+  assert_contains "user's language" "$c" 'skill: messages in the user language'
+}
+
+test_doclint_skill_script_name() {
+  local c
+  c=$(cat "$SKILLMD" 2>/dev/null)
+  assert_contains 'scripts/review-package.sh' "$c" 'skill: calls the script by its name'
+}
+
+test_doclint_skill_no_project_data() {
+  lint_no_project_data "$SKILLMD" "$SKILL_DIR/scripts/review-package.sh"
+}
+
+test_doclint_skill_frontmatter
+test_doclint_skill_steps
+test_doclint_skill_agent_table
+test_doclint_skill_fallback
+test_doclint_skill_plugin_path
+test_doclint_skill_range
+test_doclint_skill_report
+test_doclint_skill_script_name
+test_doclint_skill_no_project_data
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
