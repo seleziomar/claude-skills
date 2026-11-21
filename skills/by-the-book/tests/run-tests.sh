@@ -1508,5 +1508,143 @@ test_range_head_is_checked_out_branch
 test_range_two_runs_do_not_collide
 test_range_non_ascii_file_counted
 
+# ===================================================================== doc-lint
+# The agents and SKILL.md are prompts, but other parts depend on their exact words: the main
+# session parses the agents' output contract, and the fallback path reads the agents' model from
+# a table in SKILL.md. These checks keep them from drifting apart.
+AGENTS_DIR="$SKILL_DIR/agents"
+RULES_AGENT="$AGENTS_DIR/review-rules.md"
+BUGS_AGENT="$AGENTS_DIR/review-bugs.md"
+SECCOV_AGENT="$AGENTS_DIR/review-security-coverage.md"
+
+# frontmatter_of <file> -> the lines between the first pair of '---'
+frontmatter_of() {
+  awk 'NR == 1 && /^---$/ { f = 1; next } f && /^---$/ { exit } f' "$1"
+}
+
+# model_of <file> -> the model value of the frontmatter
+model_of() {
+  frontmatter_of "$1" | awk -F': *' '$1 == "model" { print $2; exit }'
+}
+
+# shared_block_of <file> -> the text between the markers, markers included
+shared_block_of() {
+  awk '/<!-- shared:start -->/,/<!-- shared:end -->/' "$1"
+}
+
+# lint_no_project_data <file>... -> fails on data that identifies a project. The skill ships in a
+# public repository: no ticket ids, PR numbers, e-mail addresses, IPs or real URLs. A URL is
+# allowed only as a placeholder (it carries a <...> part).
+lint_no_project_data() {
+  local f bad
+  for f in "$@"; do
+    [ -f "$f" ] || { fail "project-data: $f does not exist"; continue; }
+    bad=$( {
+      grep -oE '\b[A-Z][A-Z0-9]+-[0-9]+\b' "$f" | grep -vxE 'UTF-8|SHA-1|SHA-256|ISO-8601'
+      grep -oE '#[0-9]{3,}' "$f"
+      grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' "$f"
+      grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' "$f" | grep -vx '127.0.0.1'
+      grep -oE 'https?://[^ )`"'"'"'>]+' "$f" | grep -v '<'
+    } | sort -u | tr '\n' ' ')
+    if [ -z "$bad" ]; then ok
+    else fail "project-data: $(basename "$f") carries project data: $bad"; fi
+  done
+}
+
+test_doclint_agent_frontmatter() {
+  local f name fm want
+  for f in "$RULES_AGENT" "$BUGS_AGENT" "$SECCOV_AGENT"; do
+    if [ -f "$f" ]; then ok; else fail "agent: $f does not exist"; continue; fi
+    name=$(basename "$f" .md)
+    fm=$(frontmatter_of "$f")
+    assert_contains "name: $name" "$fm" "agent $name: name equals the file name"
+    assert_contains 'tools: Read, Grep, Glob' "$fm" "agent $name: read-only tools"
+    assert_contains 'description: ' "$fm" "agent $name: has a description"
+    case "$name" in review-rules) want=sonnet ;; *) want=opus ;; esac
+    if [ "$(model_of "$f")" = "$want" ]; then ok
+    else fail "agent $name: model should be $want, got '$(model_of "$f")'"; fi
+  done
+}
+
+# The output contract is parsed the same way for the three agents: one diverging breaks the
+# parse of a third of the review without anyone noticing. Byte for byte, markers included.
+test_doclint_shared_block_identical() {
+  local a b c
+  a=$(shared_block_of "$RULES_AGENT" 2>/dev/null)
+  b=$(shared_block_of "$BUGS_AGENT" 2>/dev/null)
+  c=$(shared_block_of "$SECCOV_AGENT" 2>/dev/null)
+  if [ -n "$a" ] && [ "$a" = "$b" ] && [ "$b" = "$c" ]; then ok
+  else fail 'agent: the shared block (invariant, not a finding, output contract) differs between the three agents'; fi
+}
+
+test_doclint_shared_block_contract() {
+  local s n
+  s=$(shared_block_of "$RULES_AGENT" 2>/dev/null)
+  for n in 'file: ' 'line: ' 'severity: high | medium | low' \
+           'category: rules | correctness | security | test-coverage' 'summary: ' \
+           'failure_scenario: ' 'affected_files: ' '"only-this"' 'quote: ' '"n/a"' '`NONE`' \
+           'anchored on a line the diff changed'; do
+    assert_contains "$n" "$s" 'agent: the output contract has its field'
+  done
+}
+
+test_doclint_review_rules() {
+  local c
+  c=$(cat "$RULES_AGENT" 2>/dev/null)
+  assert_contains 'READ BUDGET' "$c" 'review-rules: has the read budget'
+  assert_contains 'YOUR FILES' "$c" 'review-rules: names its files'
+  assert_contains 'Before looking at the diff, enumerate' "$c" 'review-rules: enumerates the requirements first'
+  assert_contains 'verbatim' "$c" 'review-rules: every finding quotes the rule verbatim'
+  assert_contains '400' "$c" 'review-rules: the whole-file threshold matches the script'
+  assert_not_contains 'FREE READING' "$c" 'review-rules: no free reading'
+}
+
+test_doclint_review_bugs() {
+  local c
+  c=$(cat "$BUGS_AGENT" 2>/dev/null)
+  assert_contains 'FREE READING' "$c" 'review-bugs: free reading'
+  assert_contains 'every consumer' "$c" 'review-bugs: follows a new value to every consumer'
+  assert_contains 'views' "$c" 'review-bugs: consumers include views'
+  assert_contains 'every path that writes' "$c" 'review-bugs: follows a guarded state to every writer'
+  assert_contains 'Hot path' "$c" 'review-bugs: has the hot-path section'
+  assert_contains 'schema dump' "$c" 'review-bugs: checks indexes in a schema dump too'
+  assert_contains "one tenant's production data" "$c" 'review-bugs: scale is a tenant, not a product noun'
+  assert_not_contains 'READ BUDGET' "$c" 'review-bugs: no read budget'
+}
+
+test_doclint_review_security_coverage() {
+  local c
+  c=$(cat "$SECCOV_AGENT" 2>/dev/null)
+  assert_contains 'FREE READING' "$c" 'review-security-coverage: free reading'
+  assert_contains 'Pass 1 — Security' "$c" 'review-security-coverage: pass 1'
+  assert_contains 'Pass 2 — Coverage' "$c" 'review-security-coverage: pass 2'
+  assert_contains 'tenant scope (company, account, site' "$c" 'review-security-coverage: generic tenant scope'
+  assert_contains 'read the other tests in the file' "$c" 'review-security-coverage: reads neighbouring tests first'
+  assert_contains 'written test policy' "$c" 'review-security-coverage: follows the written test policy'
+  assert_contains 'TEST RULES' "$c" 'review-security-coverage: looks for the policy under TEST RULES'
+  assert_contains 'no written test policy' "$c" 'review-security-coverage: default when no policy is written'
+  assert_not_contains 'READ BUDGET' "$c" 'review-security-coverage: no read budget'
+}
+
+test_doclint_agents_use_code_root() {
+  local f
+  for f in "$RULES_AGENT" "$BUGS_AGENT" "$SECCOV_AGENT"; do
+    assert_contains 'relative to `Code root`' "$(cat "$f" 2>/dev/null)" "agent $(basename "$f"): resolves paths against Code root"
+  done
+}
+
+test_doclint_agents_no_project_data() {
+  lint_no_project_data "$RULES_AGENT" "$BUGS_AGENT" "$SECCOV_AGENT"
+}
+
+test_doclint_agent_frontmatter
+test_doclint_shared_block_identical
+test_doclint_shared_block_contract
+test_doclint_review_rules
+test_doclint_review_bugs
+test_doclint_review_security_coverage
+test_doclint_agents_use_code_root
+test_doclint_agents_no_project_data
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
