@@ -60,6 +60,33 @@ section_of() {
   printf '%s' "$2" | awk -v hdr="^$1" '$0 ~ hdr,/^$/'
 }
 
+# snapshot <repo> -> the state range mode must never change
+snapshot() {
+  git -C "$1" status --porcelain=v1 -uall
+  git -C "$1" rev-parse HEAD
+  git -C "$1" for-each-ref
+  git -C "$1" stash list
+  git -C "$1" ls-files -s
+}
+
+# code_root_of <output> -> the CODE ROOT value
+code_root_of() {
+  printf '%s' "$1" | awk '/^CODE ROOT: /{ sub(/^CODE ROOT: /, ""); print; exit }'
+}
+
+# worktree_count <repo> -> how many worktrees git knows about
+worktree_count() {
+  git -C "$1" worktree list --porcelain | grep -c '^worktree '
+}
+
+# leftover_worktrees -> the review worktree directories that exist right now
+leftover_worktrees() {
+  # find, not a glob: the harness runs with `set -f`
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'by-the-book-head.*' 2>/dev/null | sort
+}
+# The whole suite must not leave a review worktree behind: compared at the end.
+WORKTREES_BEFORE=$(leftover_worktrees)
+
 # ---------------------------------------------------------------- inert text excluded
 test_excludes_lockfile() {
   local r out
@@ -1265,25 +1292,6 @@ test_empty_diff_hints_range_mode
 # B, with the rules of the current working tree. The project's working tree, index, HEAD and
 # branches must never change.
 
-# snapshot <repo> -> the state range mode must never change
-snapshot() {
-  git -C "$1" status --porcelain=v1 -uall
-  git -C "$1" rev-parse HEAD
-  git -C "$1" for-each-ref
-  git -C "$1" stash list
-  git -C "$1" ls-files -s
-}
-
-# code_root_of <output> -> the CODE ROOT value
-code_root_of() {
-  printf '%s' "$1" | awk '/^CODE ROOT: /{ sub(/^CODE ROOT: /, ""); print; exit }'
-}
-
-# worktree_count <repo> -> how many worktrees git knows about
-worktree_count() {
-  git -C "$1" worktree list --porcelain | grep -c '^worktree '
-}
-
 # fixture_range -> a repository on main with commit X (app/A.php grows to 500 lines) and commit
 # Y (adds app/B.php), then a dirty working tree: app/A.php back to 10 lines, app/C.php changed,
 # app/D.php untracked. Prints "<repo> <X> <Y>".
@@ -1887,6 +1895,18 @@ test_marketplace_declares_the_plugin() {
 }
 
 test_marketplace_declares_the_plugin
+
+# ----------------------------------------------------------------- nothing left behind
+# Regression: a test called a helper defined further down the file, its --cleanup got an empty
+# path, and every run of the suite left one review worktree in $TMPDIR.
+test_suite_leaves_no_worktree() {
+  local new
+  new=$(comm -13 <(printf '%s\n' "$WORKTREES_BEFORE") <(leftover_worktrees) | grep .)
+  if [ -z "$new" ]; then ok
+  else fail "suite: review worktrees left behind: $new"; fi
+}
+
+test_suite_leaves_no_worktree
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
