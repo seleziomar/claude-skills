@@ -1184,5 +1184,329 @@ test_base_without_remote_is_master
 test_no_base_at_all_fails
 test_empty_diff_hints_range_mode
 
+# ------------------------------------------------------------- range mode (--head)
+# Reviews only the commits A..B of the past, reading code from a temporary detached worktree of
+# B, with the rules of the current working tree. The project's working tree, index, HEAD and
+# branches must never change.
+
+# snapshot <repo> -> the state range mode must never change
+snapshot() {
+  git -C "$1" status --porcelain=v1 -uall
+  git -C "$1" rev-parse HEAD
+  git -C "$1" for-each-ref
+  git -C "$1" stash list
+  git -C "$1" ls-files -s
+}
+
+# code_root_of <output> -> the CODE ROOT value
+code_root_of() {
+  printf '%s' "$1" | awk '/^CODE ROOT: /{ sub(/^CODE ROOT: /, ""); print; exit }'
+}
+
+# worktree_count <repo> -> how many worktrees git knows about
+worktree_count() {
+  git -C "$1" worktree list --porcelain | grep -c '^worktree '
+}
+
+# fixture_range -> a repository on main with commit X (app/A.php grows to 500 lines) and commit
+# Y (adds app/B.php), then a dirty working tree: app/A.php back to 10 lines, app/C.php changed,
+# app/D.php untracked. Prints "<repo> <X> <Y>".
+fixture_range() {
+  local r x y
+  r=$(mkfixture)
+  mkdir -p "$r/app"
+  awk 'BEGIN { for (i = 1; i <= 10; i++) print "// line " i }' > "$r/app/A.php"
+  printf '<?php class C {}\n' > "$r/app/C.php"
+  git -C "$r" add -A && git -C "$r" commit -qm base
+  awk 'BEGIN { for (i = 1; i <= 500; i++) print "// line " i }' > "$r/app/A.php"
+  git -C "$r" add -A && git -C "$r" commit -qm X
+  x=$(git -C "$r" rev-parse HEAD)
+  printf '<?php class B {}\n' > "$r/app/B.php"
+  git -C "$r" add -A && git -C "$r" commit -qm Y
+  y=$(git -C "$r" rev-parse HEAD)
+  awk 'BEGIN { for (i = 1; i <= 10; i++) print "// line " i }' > "$r/app/A.php"
+  printf '<?php class C { public function x() {} }\n' > "$r/app/C.php"
+  printf '<?php class D {}\n' > "$r/app/D.php"
+  printf '%s %s %s' "$r" "$x" "$y"
+}
+
+test_range_reviews_only_the_commits() {
+  local r x y m out man changed
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  m="$r.manifest"
+  out=$(run_build "$r" --base "$x~1" --head "$y" --out "$m")
+  man=$(cat "$m" 2>/dev/null)
+  changed=$(section_of 'CHANGED FILES' "$man")
+  assert_contains 'MODE: range' "$out" 'range: the summary says MODE: range'
+  assert_contains 'app/A.php' "$changed" 'range: a file of commit X is in the review'
+  assert_contains 'app/B.php' "$changed" 'range: a file of commit Y is in the review'
+  assert_not_contains 'app/C.php' "$changed" 'range: an uncommitted change is not in the review'
+  assert_not_contains 'app/D.php' "$man" 'range: an untracked file is not in the review'
+  assert_not_contains 'UNTRACKED (' "$man" 'range: no UNTRACKED section'
+  assert_contains 'FILES: 2 changed, 0 untracked, 0 excluded' "$out" 'range: the counts cover the commits only'
+  run_build "$r" --cleanup "$(code_root_of "$out")" >/dev/null
+  rm -rf "$r" "$m"
+}
+
+test_range_worktree_is_detached_at_head() {
+  local r x y out root
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  out=$(run_build "$r" --base "$x~1" --head "$y")
+  root=$(code_root_of "$out")
+  if [ -n "$root" ] && [ "$root" != "$(cd "$r" && pwd -P)" ] && [ -d "$root" ]; then ok
+  else fail "range: CODE ROOT should be a separate directory, got '$root'"; fi
+  if [ "$(git -C "$root" rev-parse HEAD 2>/dev/null)" = "$y" ]; then ok
+  else fail 'range: the review worktree is not at the head commit'; fi
+  if git -C "$root" symbolic-ref -q HEAD >/dev/null 2>&1; then
+    fail 'range: the review worktree should be detached, it is on a branch'
+  else ok; fi
+  run_build "$r" --cleanup "$root" >/dev/null
+  rm -rf "$r"
+}
+
+test_range_read_map_counts_from_head() {
+  local r x y out line
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  out=$(run_build "$r" --base "$x~1" --head "$y")
+  line=$(section_of 'READ MAP' "$out" | grep -F 'app/A.php')
+  assert_contains '500' "$line" 'range: the read map counts the lines of the head commit (500), not the working tree (10)'
+  assert_not_contains 'small file' "$line" 'range: the 500-line file of the head commit is not a small file'
+  run_build "$r" --cleanup "$(code_root_of "$out")" >/dev/null
+  rm -rf "$r"
+}
+
+test_range_rules_come_from_working_tree() {
+  local r x y out root real
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  real=$(cd "$r" && pwd -P)
+  mkdir -p "$r/.claude/rules"
+  cat > "$r/.claude/rules/app.md" <<'RULE'
+---
+paths:
+  - "app/**"
+---
+A rule written after the reviewed commits.
+RULE
+  printf '# Conventions written today\n' > "$r/CLAUDE.md"
+  out=$(run_build "$r" --base "$x~1" --head "$y")
+  root=$(code_root_of "$out")
+  assert_contains "RULES FROM: $real (working tree)" "$out" 'range: the manifest says where the rules come from'
+  assert_contains "$real/.claude/rules/app.md" "$(section_of 'APPLICABLE RULES' "$out")" \
+    'range: a rule that exists only in the working tree applies, with an absolute path'
+  assert_contains "$real/CLAUDE.md" "$(section_of 'CLAUDE.md' "$out")" \
+    'range: the CLAUDE.md of the working tree is listed with an absolute path'
+  assert_contains "HEAD: $y (" "$out" 'range: the manifest names the head'
+  run_build "$r" --cleanup "$root" >/dev/null
+  rm -rf "$r"
+}
+
+test_range_leaves_project_untouched() {
+  local r x y out before after
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  before=$(snapshot "$r")
+  out=$(run_build "$r" --base "$x~1" --head "$y")
+  run_build "$r" --cleanup "$(code_root_of "$out")" >/dev/null
+  after=$(snapshot "$r")
+  if [ -n "$before" ] && [ "$before" = "$after" ]; then ok
+  else fail 'range: the project status, HEAD, refs, stash or index changed'; fi
+  if [ "$(worktree_count "$r")" = 1 ]; then ok
+  else fail 'range: a worktree was left behind after --cleanup'; fi
+  rm -rf "$r"
+}
+
+test_range_does_not_run_hooks() {
+  local r x y out root
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  printf '#!/bin/sh\ntouch "%s/HOOK_RAN"\n' "$r" > "$r/.git/hooks/post-checkout"
+  chmod +x "$r/.git/hooks/post-checkout"
+  out=$(run_build "$r" --base "$x~1" --head "$y")
+  root=$(code_root_of "$out")
+  if [ ! -e "$r/HOOK_RAN" ]; then ok
+  else fail 'range: creating the review worktree ran the project hooks'; fi
+  run_build "$r" --cleanup "$root" >/dev/null
+  rm -rf "$r"
+}
+
+test_range_cleanup_removes_worktree() {
+  local r x y out root st
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  out=$(run_build "$r" --base "$x~1" --head "$y")
+  root=$(code_root_of "$out")
+  st=$(run_build_status "$r" --cleanup "$root")
+  if [ "$st" = 0 ]; then ok
+  else fail "cleanup: removing the review worktree should exit 0, got $st"; fi
+  if [ -n "$root" ] && [ ! -e "$root" ]; then ok
+  else fail "cleanup: the worktree directory still exists: $root"; fi
+  assert_not_contains "$root" "$(git -C "$r" worktree list)" 'cleanup: git no longer lists the worktree'
+  rm -rf "$r"
+}
+
+test_cleanup_refuses_foreign_path() {
+  local r st out other stray
+  r=$(mkfixture)
+  other="$r.other"
+  git -C "$r" worktree add -q "$other" -b other
+  stray=$(mktemp -d)
+
+  st=$(run_build_status "$r" --cleanup "$r")
+  if [ "$st" = 1 ]; then ok
+  else fail "cleanup: the repository itself must be refused, got exit $st"; fi
+  out=$(run_build "$r" --cleanup "$other")
+  assert_contains 'not a worktree created by this script' "$out" 'cleanup: a worktree of the user is refused'
+  if [ -d "$other" ] && [ "$(worktree_count "$r")" = 2 ]; then ok
+  else fail "cleanup: the user's own worktree was removed"; fi
+  st=$(run_build_status "$r" --cleanup "$stray")
+  if [ "$st" = 1 ] && [ -d "$stray" ]; then ok
+  else fail "cleanup: a directory that is not a worktree must be refused and kept, got exit $st"; fi
+
+  git -C "$r" worktree remove --force "$other"
+  rm -rf "$r" "$stray"
+}
+
+test_range_errors() {
+  local r x y st out
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  st=$(run_build_status "$r" --head "$y")
+  out=$(run_build "$r" --head "$y")
+  if [ "$st" = 1 ]; then ok; else fail "range-errors: --head without --base should exit 1, got $st"; fi
+  assert_contains '--head requires --base' "$out" 'range-errors: says --head requires --base'
+
+  st=$(run_build_status "$r" 123 --base main --head "$y")
+  out=$(run_build "$r" 123 --base main --head "$y")
+  if [ "$st" = 1 ]; then ok; else fail "range-errors: --head with a PR should exit 1, got $st"; fi
+  assert_contains '--head cannot be used with a PR' "$out" 'range-errors: says --head cannot be used with a PR'
+
+  st=$(run_build_status "$r" --base main --head no-such-ref)
+  out=$(run_build "$r" --base main --head no-such-ref)
+  if [ "$st" = 1 ]; then ok; else fail "range-errors: an unknown head should exit 1, got $st"; fi
+  assert_contains "head 'no-such-ref' does not exist" "$out" 'range-errors: names the unknown head'
+
+  if [ "$(worktree_count "$r")" = 1 ]; then ok
+  else fail 'range-errors: an error left a worktree behind'; fi
+  rm -rf "$r"
+}
+
+test_range_worktree_removed_on_error() {
+  local r x y st
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  # the manifest is written after the worktree exists: a missing directory fails there
+  st=$(run_build_status "$r" --base "$x~1" --head "$y" --out "$r/does/not/exist/manifest")
+  if [ "$st" = 1 ]; then ok; else fail "range-error: should exit 1, got $st"; fi
+  if [ "$(worktree_count "$r")" = 1 ]; then ok
+  else fail 'range-error: the review worktree was not removed after the error'; fi
+  rm -rf "$r"
+}
+
+test_range_fingerprint_flag_matches() {
+  local r x y out fp_summary fp_flag
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  out=$(run_build "$r" --base "$x~1" --head "$y")
+  fp_summary=$(printf '%s' "$out" | awk '/^FINGERPRINT: /{print $2}')
+  fp_flag=$(run_build "$r" --fingerprint --base "$x~1" --head "$y")
+  if [ -n "$fp_summary" ] && [ "$fp_flag" = "$fp_summary" ]; then ok
+  else fail "range-fp: --fingerprint ($fp_flag) does not reproduce the summary's ($fp_summary)"; fi
+  assert_contains "$(git -C "$r" rev-parse --short "$y")-" "$fp_flag" 'range-fp: starts with the head commit'
+  if [ "$(worktree_count "$r")" = 2 ]; then ok
+  else fail 'range-fp: --fingerprint should not create a worktree'; fi
+  run_build "$r" --cleanup "$(code_root_of "$out")" >/dev/null
+  rm -rf "$r"
+}
+
+# -- inputs the spec implies but does not name
+test_range_empty_exits_3_without_worktree() {
+  local r x y st out
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  st=$(run_build_status "$r" --base "$y" --head "$y")
+  out=$(run_build "$r" --base "$y" --head "$y")
+  if [ "$st" = 3 ]; then ok; else fail "range-empty: an empty range should exit 3, got $st"; fi
+  assert_contains '--base <A> --head <B>' "$out" 'range-empty: the hint is printed'
+  if [ "$(worktree_count "$r")" = 1 ]; then ok
+  else fail 'range-empty: an empty range left a worktree behind'; fi
+  rm -rf "$r"
+}
+
+test_range_from_linked_worktree() {
+  local r x y lw out root st before after
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  lw="$r.lw"
+  git -C "$r" worktree add -q "$lw" -b lw "$y"
+  before=$(snapshot "$lw")
+  out=$(run_build "$lw" --base "$x~1" --head "$y")
+  root=$(code_root_of "$out")
+  if [ -n "$root" ] && [ -d "$root" ]; then ok
+  else fail 'range-linked: no review worktree from inside a linked worktree'; fi
+  st=$(run_build_status "$lw" --cleanup "$root")
+  if [ "$st" = 0 ] && [ ! -e "$root" ]; then ok
+  else fail "range-linked: --cleanup from a linked worktree should remove it, got exit $st"; fi
+  after=$(snapshot "$lw")
+  if [ "$before" = "$after" ] && [ -d "$lw" ]; then ok
+  else fail 'range-linked: the linked worktree changed'; fi
+  git -C "$r" worktree remove --force "$lw"
+  rm -rf "$r"
+}
+
+test_range_head_is_checked_out_branch() {
+  local r st out
+  r=$(fixture_with_rule)
+  git -C "$r" add -A && git -C "$r" commit -qm 'controller change'
+  st=$(run_build_status "$r" --base feat~1 --head feat)
+  if [ "$st" = 0 ]; then ok
+  else fail "range-checked-out: --head naming the current branch should work, got exit $st"; fi
+  out=$(run_build "$r" --base feat~1 --head feat)
+  run_build "$r" --cleanup "$(code_root_of "$out")" >/dev/null
+  # the first run's worktree too
+  git -C "$r" worktree list --porcelain | awk '/^worktree /{print $2}' | grep 'by-the-book-head\.' \
+    | while IFS= read -r w; do git -C "$r" worktree remove --force "$w"; done
+  rm -rf "$r"
+}
+
+test_range_two_runs_do_not_collide() {
+  local r x y out1 out2 root1 root2
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  out1=$(run_build "$r" --base "$x~1" --head "$y")
+  out2=$(run_build "$r" --base "$x~1" --head "$y")
+  root1=$(code_root_of "$out1"); root2=$(code_root_of "$out2")
+  if [ -n "$root1" ] && [ -n "$root2" ] && [ "$root1" != "$root2" ]; then ok
+  else fail 'range-two-runs: two runs share a review worktree'; fi
+  run_build "$r" --cleanup "$root1" >/dev/null
+  if [ -d "$root2" ] && [ "$(worktree_count "$r")" = 2 ]; then ok
+  else fail 'range-two-runs: removing the first worktree touched the second'; fi
+  run_build "$r" --cleanup "$root2" >/dev/null
+  rm -rf "$r"
+}
+
+test_range_non_ascii_file_counted() {
+  local r a b out line
+  r=$(mkfixture)
+  a=$(git -C "$r" rev-parse HEAD)
+  mkdir -p "$r/app"
+  awk 'BEGIN { for (i = 1; i <= 500; i++) print "// line " i }' > "$r/app/Ação.php"
+  git -C "$r" add -A && git -C "$r" commit -qm 'non-ascii'
+  b=$(git -C "$r" rev-parse HEAD)
+  out=$(run_build "$r" --base "$a" --head "$b")
+  line=$(section_of 'READ MAP' "$out" | grep -F 'Ação.php')
+  assert_contains '500' "$line" 'range-non-ascii: the read map counts the non-ASCII file in the worktree'
+  assert_not_contains '(missing on disk)' "$line" 'range-non-ascii: the non-ASCII file is found on disk'
+  run_build "$r" --cleanup "$(code_root_of "$out")" >/dev/null
+  rm -rf "$r"
+}
+
+test_range_reviews_only_the_commits
+test_range_worktree_is_detached_at_head
+test_range_read_map_counts_from_head
+test_range_rules_come_from_working_tree
+test_range_leaves_project_untouched
+test_range_does_not_run_hooks
+test_range_cleanup_removes_worktree
+test_cleanup_refuses_foreign_path
+test_range_errors
+test_range_worktree_removed_on_error
+test_range_fingerprint_flag_matches
+test_range_empty_exits_3_without_worktree
+test_range_from_linked_worktree
+test_range_head_is_checked_out_branch
+test_range_two_runs_do_not_collide
+test_range_non_ascii_file_counted
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

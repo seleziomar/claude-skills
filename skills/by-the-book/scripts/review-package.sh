@@ -16,11 +16,16 @@ set -f
 
 usage() {
   cat <<'EOF'
-Usage: review-package.sh [<pr-number>|<pr-url>] [--base <ref>]
+Usage: review-package.sh [<pr-number>|<pr-url>] [--base <ref>] [--head <ref>] [--out <file>]
+       review-package.sh --cleanup <path>
 
   (no argument)     reviews the local diff: working tree against the merge-base with the base
   <pr-number|url>   reviews a PR through gh (--base is ignored)
   --base <ref>      forces the base in local mode (default: origin/HEAD)
+  --head <ref>      range mode: reviews only the commits <base>..<ref> (needs --base). The code
+                    is read from a temporary detached worktree of <ref>; the rules come from the
+                    current working tree. The project's working tree, index and HEAD are untouched
+  --cleanup <path>  removes a review worktree this script created (the CODE ROOT of range mode)
   --fingerprint     prints ONLY the snapshot fingerprint and exits (to detect whether the
                     tree moved during the review)
   --out <file>      writes the whole manifest to <file> and prints only the summary on stdout
@@ -33,6 +38,8 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 # ---------------------------------------------------------------- arguments
 PR=""
 BASE=""
+HEAD_REF=""
+CLEANUP=""
 FP_ONLY=0
 OUT_FILE=""
 while [ $# -gt 0 ]; do
@@ -40,6 +47,9 @@ while [ $# -gt 0 ]; do
     -h|--help)     usage; exit 0 ;;
     --base)        [ $# -ge 2 ] || die "--base requires a ref"; BASE="$2"; shift 2 ;;
     --base=*)      BASE="${1#--base=}"; shift ;;
+    --head)        [ $# -ge 2 ] || die "--head requires a ref"; HEAD_REF="$2"; shift 2 ;;
+    --head=*)      HEAD_REF="${1#--head=}"; shift ;;
+    --cleanup)     [ $# -ge 2 ] || die "--cleanup requires a path"; CLEANUP="$2"; shift 2 ;;
     --fingerprint) FP_ONLY=1; shift ;;
     --out)         [ $# -ge 2 ] || die "--out requires a file path"
                    case "$2" in ""|-*) die "--out requires a file path, got: $2" ;; esac
@@ -52,6 +62,11 @@ done
 
 BASE_EXPLICIT=0
 [ -n "$BASE" ] && BASE_EXPLICIT=1
+
+if [ -n "$HEAD_REF" ]; then
+  [ -z "$PR" ] || die "--head cannot be used with a PR"
+  [ -n "$BASE" ] || die "--head requires --base"
+fi
 
 MODE=local
 if [ -n "$PR" ]; then
@@ -67,6 +82,7 @@ if [ -n "$PR" ]; then
   esac
   MODE=pr
 fi
+[ -n "$HEAD_REF" ] && MODE=range
 
 # ---------------------------------------------------------------- repository and temp
 git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository"
@@ -74,6 +90,36 @@ REPO_ROOT=$(git rev-parse --show-toplevel) || die "could not find the repository
 cd "$REPO_ROOT" || die "could not enter $REPO_ROOT"
 # Where the agents read code. The repository root, except in range mode.
 CODE_ROOT="$REPO_ROOT"
+
+# Every review worktree lives in a temp directory with this prefix. --cleanup refuses anything
+# else, so it can never remove a worktree, or a directory, of the user's own.
+WT_PREFIX="by-the-book-head."
+
+# --cleanup <path>: removes ONE review worktree, with `git worktree remove`. No global
+# `git worktree prune`: it would also drop the user's other stale worktree entries.
+if [ -n "$CLEANUP" ]; then
+  [ -d "$CLEANUP" ] || die "not a worktree created by this script: $CLEANUP"
+  target=$(cd "$CLEANUP" && pwd -P) || die "not a worktree created by this script: $CLEANUP"
+  case "$(basename "$target")" in
+    "$WT_PREFIX"*) ;;
+    *) die "not a worktree created by this script: $CLEANUP" ;;
+  esac
+  listed=0
+  while IFS= read -r wl; do
+    case "$wl" in
+      "worktree "*)
+        w="${wl#worktree }"
+        [ -d "$w" ] && w=$(cd "$w" && pwd -P)
+        [ "$w" = "$target" ] && listed=1 ;;
+    esac
+  done <<WTLIST
+$(git worktree list --porcelain)
+WTLIST
+  [ "$listed" -eq 1 ] || die "not a worktree created by this script: $CLEANUP"
+  git worktree remove --force "$target" || die "git worktree remove failed for $target"
+  printf 'removed: %s\n' "$target"
+  exit 0
+fi
 
 OUT=$(mktemp -d) || die "mktemp failed"
 DIFF="$OUT/review.diff"
@@ -317,6 +363,8 @@ emit_readmap() {
 
 # ---------------------------------------------------------------- collect the diff
 BASE_LABEL=""
+HEAD_LABEL=""
+HEAD_SHA=""
 if [ "$MODE" = pr ]; then
   command -v gh >/dev/null 2>&1 || die "gh is not on PATH — install the GitHub CLI"
   gh auth status >/dev/null 2>&1 || die "gh is not authenticated — run: gh auth login"
@@ -326,6 +374,20 @@ if [ "$MODE" = pr ]; then
     || die "gh pr view $PR failed: $(tr '\n' ' ' < "$OUT/gh.err")"
   BASE_LABEL="PR #$PR"
   [ -n "$BASE" ] && warn "--base was ignored: in PR mode the base is the PR's own"
+elif [ "$MODE" = range ]; then
+  # Only the commits <base>..<head>: the working tree and untracked files are not part of it.
+  git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null 2>&1 || die "base '$BASE' does not exist"
+  HEAD_SHA=$(git rev-parse --verify --quiet "$HEAD_REF^{commit}" 2>/dev/null) \
+    || die "head '$HEAD_REF' does not exist"
+  MB=$(git merge-base "$BASE" "$HEAD_SHA" 2>/dev/null)
+  if [ -z "$MB" ]; then
+    warn "no merge-base between '$BASE' and '$HEAD_REF' (unrelated histories) — comparing directly with '$BASE'"
+    MB="$BASE"
+  fi
+  git -c core.quotePath=false diff --name-only "$MB" "$HEAD_SHA" > "$FILES" || die "git diff --name-only failed"
+  git -c core.quotePath=false diff "$MB" "$HEAD_SHA" > "$DIFF" || die "git diff failed"
+  BASE_LABEL="$BASE (merge-base $(git rev-parse --short "$MB"))"
+  HEAD_LABEL="$HEAD_REF ($(git rev-parse --short "$HEAD_SHA"))"
 else
   if [ -z "$BASE" ]; then
     BASE=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
@@ -388,13 +450,44 @@ hash_stdin() {
   else cksum | tr -d ' '
   fi
 }
-FP_HEAD=$(git rev-parse --short HEAD 2>/dev/null || printf 'no-head')
+if [ -n "$HEAD_SHA" ]; then
+  FP_HEAD=$(git rev-parse --short "$HEAD_SHA")
+else
+  FP_HEAD=$(git rev-parse --short HEAD 2>/dev/null || printf 'no-head')
+fi
 FP_BODY=$(cat "$DIFF" "$UNTRACKED" | hash_stdin | cut -c1-12)
 FINGERPRINT="$FP_HEAD-$FP_BODY"
 
 if [ "$FP_ONLY" -eq 1 ]; then
   printf '%s\n' "$FINGERPRINT"
   exit 0
+fi
+
+# ------------------------------------------------------------- range: review worktree
+# The agents follow callers and read neighbouring files, so they need the code AS IT WAS at the
+# head commit, not the live tree. A detached worktree gives them that without touching the
+# project's working tree, index, HEAD or branches. Hooks are off (a post-checkout hook could
+# install dependencies or write files) and LFS smudging is skipped. Created only when there is
+# something to review, so an empty range leaves nothing behind; removed by the EXIT trap if the
+# script fails after this point.
+WT=""
+remove_wt_on_error() {
+  local st=$?
+  if [ "$st" -ne 0 ] && [ "$st" -ne 3 ] && [ -n "$WT" ]; then
+    git worktree remove --force "$WT" >/dev/null 2>&1 || true
+  fi
+}
+if [ "$MODE" = range ] && [ "$N_FILES" -gt 0 ]; then
+  WT=$(mktemp -d "${TMPDIR:-/tmp}/${WT_PREFIX}XXXXXX") || die "mktemp failed"
+  WT=$(cd "$WT" && pwd -P) || die "could not resolve $WT"
+  if ! GIT_LFS_SKIP_SMUDGE=1 git -c core.hooksPath=/dev/null worktree add --detach "$WT" "$HEAD_SHA" \
+       >/dev/null 2>"$OUT/worktree.err"; then
+    rmdir "$WT" 2>/dev/null
+    WT=""
+    die "could not create the review worktree: $(tr '\n' ' ' < "$OUT/worktree.err")"
+  fi
+  trap remove_wt_on_error EXIT
+  CODE_ROOT="$WT"
 fi
 
 # ------------------------------------------------- tighter base (downstream branch)
@@ -650,6 +743,16 @@ CLAUDE_MDS="$OUT/claude_mds.txt"
 
 N_CLAUDE=$(grep -c . "$CLAUDE_MDS"); N_CLAUDE=${N_CLAUDE:-0}
 
+# In range mode the rules and CLAUDE.md files come from the working tree, not from CODE ROOT:
+# their paths are made absolute so the agents cannot look for them in the review worktree.
+if [ "$MODE" = range ]; then
+  awk -F'\t' -v root="$REPO_ROOT" 'BEGIN { OFS = "\t" } { $1 = root "/" $1; print }' \
+    "$RULES_MATCHED" > "$RULES_MATCHED.abs" && mv "$RULES_MATCHED.abs" "$RULES_MATCHED"
+  for lst in "$RULES_GLOBAL" "$RULES_TEST" "$CLAUDE_MDS"; do
+    awk -v root="$REPO_ROOT" 'NF { print root "/" $0 }' "$lst" > "$lst.abs" && mv "$lst.abs" "$lst"
+  done
+fi
+
 # ---------------------------------------------------------------------- manifest
 # $RULES_MATCHED has one line per (rule, file), so counting lines would count files. What the
 # section announces is RULES, so the count is of distinct rules.
@@ -671,7 +774,9 @@ emit_manifest() {
   printf 'MODE: %s\n' "$MODE"
   printf 'REPO: %s\n' "$REPO_ROOT"
   printf 'CODE ROOT: %s\n' "$CODE_ROOT"
+  [ "$MODE" = range ] && printf 'RULES FROM: %s (working tree)\n' "$REPO_ROOT"
   printf 'BASE: %s\n' "$BASE_LABEL"
+  [ "$MODE" = range ] && printf 'HEAD: %s\n' "$HEAD_LABEL"
   printf 'DIFF: %s (%s lines)\n' "$DIFF" "$N_DIFF"
   printf 'FINGERPRINT: %s\n' "$FINGERPRINT"
 
@@ -689,7 +794,7 @@ emit_manifest() {
   fi
 
   printf '\nREAD MAP (file | lines | changed ranges)\n'
-  emit_readmap
+  ( cd "$CODE_ROOT" && emit_readmap )
 
   printf '\nAPPLICABLE RULES (%s)\n' "$((N_RULES + N_GLOBAL))"
   if [ "$N_RULES" -gt 0 ]; then
@@ -731,7 +836,9 @@ emit_summary() {
   printf 'MODE: %s\n' "$MODE"
   printf 'REPO: %s\n' "$REPO_ROOT"
   printf 'CODE ROOT: %s\n' "$CODE_ROOT"
+  [ "$MODE" = range ] && printf 'RULES FROM: %s (working tree)\n' "$REPO_ROOT"
   printf 'BASE: %s\n' "$BASE_LABEL"
+  [ "$MODE" = range ] && printf 'HEAD: %s\n' "$HEAD_LABEL"
   printf 'DIFF: %s (%s lines)\n' "$DIFF" "$N_DIFF"
   printf 'FINGERPRINT: %s\n' "$FINGERPRINT"
   printf 'MANIFEST: %s\n' "$OUT_FILE"
