@@ -1491,6 +1491,32 @@ test_range_non_ascii_file_counted() {
   rm -rf "$r"
 }
 
+# Regression: bash 3.2 does not run the EXIT trap when the script dies from an untrapped signal.
+# An interrupted run (Esc, a Bash-tool timeout) left its worktree registered, and the session
+# never learned the path because the summary had not been printed yet.
+test_range_interrupted_run_removes_worktree() {
+  local r x y shim real_find pid i
+  set -- $(fixture_range); r=$1; x=$2; y=$3
+  mkdir -p "$r/.claude/rules"
+  printf -- '---\npaths:\n  - "app/**"\n---\nA rule.\n' > "$r/.claude/rules/app.md"
+  # `find` runs after the worktree exists: a slow find leaves time to interrupt the script there
+  shim=$(mktemp -d)
+  real_find=$(command -v find)
+  printf '#!/bin/sh\nsleep 3\nexec "%s" "$@"\n' "$real_find" > "$shim/find"
+  chmod +x "$shim/find"
+  ( cd "$r" && PATH="$shim:$PATH" exec bash "$BUILD" --base "$x~1" --head "$y" ) >/dev/null 2>&1 &
+  pid=$!
+  i=0
+  while [ "$(worktree_count "$r")" -lt 2 ] && [ "$i" -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  if [ "$(worktree_count "$r")" = 2 ]; then ok
+  else fail 'range-interrupted: the review worktree was never created (test setup)'; fi
+  kill -TERM "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  if [ "$(worktree_count "$r")" = 1 ]; then ok
+  else fail 'range-interrupted: a SIGTERM after the worktree was created left it behind'; fi
+  rm -rf "$r" "$shim"
+}
+
 test_range_reviews_only_the_commits
 test_range_worktree_is_detached_at_head
 test_range_read_map_counts_from_head
@@ -1507,6 +1533,7 @@ test_range_from_linked_worktree
 test_range_head_is_checked_out_branch
 test_range_two_runs_do_not_collide
 test_range_non_ascii_file_counted
+test_range_interrupted_run_removes_worktree
 
 # ===================================================================== doc-lint
 # The agents and SKILL.md are prompts, but other parts depend on their exact words: the main

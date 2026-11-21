@@ -474,19 +474,24 @@ WT=""
 remove_wt_on_error() {
   local st=$?
   if [ "$st" -ne 0 ] && [ "$st" -ne 3 ] && [ -n "$WT" ]; then
-    git worktree remove --force "$WT" >/dev/null 2>&1 || true
+    # `rmdir` covers an interruption that came before git registered the worktree
+    git worktree remove --force "$WT" >/dev/null 2>&1 || rmdir "$WT" 2>/dev/null || true
   fi
 }
 if [ "$MODE" = range ] && [ "$N_FILES" -gt 0 ]; then
   WT=$(mktemp -d "${TMPDIR:-/tmp}/${WT_PREFIX}XXXXXX") || die "mktemp failed"
   WT=$(cd "$WT" && pwd -P) || die "could not resolve $WT"
+  # bash 3.2 skips the EXIT trap when an untrapped signal kills the script: an interrupted run
+  # (Esc, a tool timeout) would leave the worktree registered, before the summary ever told the
+  # session where it is. Turning the signals into exits makes the EXIT trap run.
+  trap remove_wt_on_error EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
   if ! GIT_LFS_SKIP_SMUDGE=1 git -c core.hooksPath=/dev/null worktree add --detach "$WT" "$HEAD_SHA" \
        >/dev/null 2>"$OUT/worktree.err"; then
-    rmdir "$WT" 2>/dev/null
-    WT=""
     die "could not create the review worktree: $(tr '\n' ' ' < "$OUT/worktree.err")"
   fi
-  trap remove_wt_on_error EXIT
   CODE_ROOT="$WT"
 fi
 
