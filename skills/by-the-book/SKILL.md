@@ -43,7 +43,7 @@ M=$(mktemp "${TMPDIR:-/tmp}/by-the-book-manifest.XXXXXX") && bash "<skill-dir>/s
 merged. The code is read from a temporary, detached worktree of `B` (the `CODE ROOT` of the
 summary); the rules and `CLAUDE.md` files come from the current working tree, so past code is
 checked against today's conventions. The project's working tree, index, `HEAD` and branches are
-not touched. Step 6 removes the worktree.
+not touched. Step 4 removes the worktree as soon as the agents are done.
 
 Exit codes: `0` ok, `1` error (on stderr), `3` nothing to review. Stdout is a **summary**: `MODE`,
 `REPO`, `CODE ROOT`, `BASE`, `DIFF`, `FINGERPRINT`, `MANIFEST`, `FILES`, the rules that matched,
@@ -92,7 +92,7 @@ measured one, and the call parameter overrides it.
 **Fallback path:** when they are not listed (the skill was installed with `npx skills`, copied or
 unzipped, without the plugin), or a call fails with "agent type not found". The user must know,
 because it costs more: write this fallback line as text in the same message as the `Agent` calls,
-and repeat it in the report (step 4): *the plugin agents are not installed, so this review runs on
+and repeat it in the report (step 5): *the plugin agents are not installed, so this review runs on
 `general-purpose` agents, at about 20–30% more cost and without their read-only lock; installing
 the plugin from the marketplace avoids it.* Then dispatch three `general-purpose` agents, pass
 `model` from the table, and start each prompt with these lines, followed by the context block:
@@ -124,7 +124,20 @@ A value different from the summary's `FINGERPRINT` means the tree moved during t
 and offer to run again: the findings may be talking about code that no longer exists. Do not hide
 it in a footnote. Skipped in range mode: the reviewed commits cannot move.
 
-## 4. Report
+## 4. Clean up
+
+Range mode only, and only when step 1 exited `0` with a `CODE ROOT` different from `REPO`: remove
+the worktree as soon as the agents are done (after any `SendMessage` reformat), before the report.
+The gate ends the turn, and a user who never answers it would otherwise leave the worktree behind.
+Do it also when an agent failed or the user stopped the review.
+
+```bash
+bash "<skill-dir>/scripts/review-package.sh" --cleanup <CODE ROOT>
+```
+
+It removes only the worktree the script created, and refuses any other path.
+
+## 5. Report
 
 Then **one** `ReportFindings` call:
 
@@ -146,22 +159,12 @@ with `file:line`, severity, summary and failure scenario.
 
 No agent found anything: one sentence, saying which agents ran and which were skipped.
 
-## 5. Gate
+## 6. Gate
 
 Only after reporting, ask **which of these findings the user wants you to fix**: the choice is
 finding by finding, not a yes or no for the whole batch. False positives reach the user on
 purpose: they triage better, and cheaper, than a verifier per finding. In range mode a fix goes into
 today's code: check that the finding still holds there first.
-
-## 6. Clean up
-
-Range mode only, also when an earlier step failed or the user stopped the review:
-
-```bash
-bash "<skill-dir>/scripts/review-package.sh" --cleanup <CODE ROOT>
-```
-
-It removes only the worktree the script created, and refuses any other path.
 
 ## Red flags — stop and go back a step
 

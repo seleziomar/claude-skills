@@ -13,8 +13,8 @@ The prompt carries: the repo, the code root, the path of the frozen diff, the pa
 manifest, the paths of the rules that matched and of the `CLAUDE.md` files (project context;
 compliance with rules is not yours, but the project's test policy is, see Pass 2). Read the diff
 and the manifest with `Read`. Every file path in the manifest (changed files, read map, scopes) is
-relative to `Code root`: read it as `<Code root>/<path>`, and point `Grep` and `Glob` at
-`Code root`. Rule and `CLAUDE.md` paths are relative to `Repo` unless they are absolute. The
+relative to `Code root`: read it as `<Code root>/<path>`,
+and point `Grep` and `Glob` at `Code root`. Rule and `CLAUDE.md` paths are relative to `Repo` unless they are absolute. The
 manifest lists the changed files, the UNTRACKED ones (not in the diff) and the EXCLUDED ones
 (inert text, out of this review).
 

@@ -1698,6 +1698,8 @@ test_doclint_review_rules() {
   assert_contains 'YOUR FILES' "$c" 'review-rules: names its files'
   assert_contains 'Before looking at the diff, enumerate' "$c" 'review-rules: enumerates the requirements first'
   assert_contains 'verbatim' "$c" 'review-rules: every finding quotes the rule verbatim'
+  # a repository with CLAUDE.md files and no .claude/rules/ left the agent with no file to read
+  assert_contains 'the `CLAUDE.md` files act as a global-scope rule' "$c" 'review-rules: has files to read in a CLAUDE.md-only repository'
   assert_contains '400' "$c" 'review-rules: the whole-file threshold matches the script'
   assert_not_contains 'FREE READING' "$c" 'review-rules: no free reading'
 }
@@ -1733,6 +1735,8 @@ test_doclint_agents_use_code_root() {
   local f
   for f in "$RULES_AGENT" "$BUGS_AGENT" "$SECCOV_AGENT"; do
     assert_contains 'relative to `Code root`' "$(cat "$f" 2>/dev/null)" "agent $(basename "$f"): resolves paths against Code root"
+    # in range mode a Grep without a path searches today's tree, not the reviewed commit
+    assert_contains 'point `Grep` and `Glob` at `Code root`' "$(cat "$f" 2>/dev/null)" "agent $(basename "$f"): searches the reviewed code"
   done
 }
 
@@ -1766,9 +1770,13 @@ test_doclint_skill_steps() {
   local c h
   c=$(cat "$SKILLMD" 2>/dev/null)
   for h in '## 1. Build the review package' '## 2. Dispatch the three agents' \
-           '## 3. Check the fingerprint' '## 4. Report' '## 5. Gate' '## 6. Clean up'; do
+           '## 3. Check the fingerprint' '## 4. Clean up' '## 5. Report' '## 6. Gate'; do
     assert_contains "$h" "$c" 'skill: has its step'
   done
+  # Regression: the cleanup came after the gate, and the gate ends the turn: a user who never
+  # answered it left the range worktree behind. It runs as soon as the agents are done.
+  assert_contains 'before the report' "$c" 'skill: the range worktree is removed before the report'
+  assert_contains 'only when step 1 exited `0`' "$c" 'skill: no cleanup call when step 1 failed or found nothing'
 }
 
 # The fallback path passes the model from this table; the plugin path takes it from the agent

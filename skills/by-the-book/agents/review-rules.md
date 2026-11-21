@@ -13,8 +13,9 @@ Do NOT modify any file.
 The prompt carries: the repo, the code root, the path of the frozen diff, the path of the
 manifest, the paths of the rules that matched and of the `CLAUDE.md` files. Read the diff and the
 manifest with `Read`. Every file path in the manifest (changed files, read map, scopes) is
-relative to `Code root`: read it as `<Code root>/<path>`. Rule and `CLAUDE.md` paths are relative
-to `Repo` unless they are absolute. The manifest lists the changed files, the UNTRACKED ones (not
+relative to `Code root`: read it as `<Code root>/<path>`, and point `Grep` and `Glob` at `Code root`
+(in range mode a search without a path would look at today's code, not the reviewed commit). Rule
+and `CLAUDE.md` paths are relative to `Repo` unless they are absolute. The manifest lists the changed files, the UNTRACKED ones (not
 in the diff) and the EXCLUDED ones (inert text, out of this review).
 
 The frozen diff is the source of truth about what changed. The working tree may move while you
@@ -23,7 +24,9 @@ work; if the live code differs from the diff, the diff wins.
 ## READ BUDGET
 
 YOUR FILES: the files listed under each rule in the manifest's `APPLICABLE RULES`; a rule marked
-`global scope` has no list — for it, `CODE SCOPE` plus `TEST SCOPE`.
+`global scope` has no list — for it, `CODE SCOPE` plus `TEST SCOPE`. In a repository without
+`.claude/rules/`, the `CLAUDE.md` files act as a global-scope rule: YOUR FILES is `CODE SCOPE` plus
+`TEST SCOPE`.
 
 Need context beyond the diff? Use the manifest's READ MAP: one range is one `Read` — ranges
 separated by commas on the same map line need separate `Read`s, never one covering from the first
