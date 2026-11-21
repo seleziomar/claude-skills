@@ -1740,5 +1740,36 @@ test_doclint_skill_report
 test_doclint_skill_script_name
 test_doclint_skill_no_project_data
 
+# ------------------------------------------------------------------- marketplace entry
+# The plugin is what turns the three agent files into `by-the-book:review-*`. The trial-by-fire
+# entry shares the source "./" and has no `agents` key: it must stay that way, or it would load
+# these agents too.
+MARKETPLACE="$SKILL_DIR/../../.claude-plugin/marketplace.json"
+
+# entry_of <plugin name> -> that plugin's block in marketplace.json (up to its closing brace)
+entry_of() {
+  awk -v n="\"name\": \"$1\"" 'index($0, n) { f = 1 } f { print } f && /^    }/ { exit }' "$MARKETPLACE"
+}
+
+test_marketplace_declares_the_plugin() {
+  local e t name
+  e=$(entry_of by-the-book)
+  assert_contains '"name": "by-the-book"' "$e" 'marketplace: by-the-book entry exists'
+  assert_contains '"version": "1.0.0"' "$e" 'marketplace: by-the-book starts at 1.0.0'
+  assert_contains '"source": "./"' "$e" 'marketplace: by-the-book source'
+  assert_contains '"strict": false' "$e" 'marketplace: by-the-book is not strict'
+  assert_contains '"skills": ["./skills/by-the-book"]' "$e" 'marketplace: by-the-book lists only its skill'
+  for name in review-rules review-bugs review-security-coverage; do
+    assert_contains "\"./skills/by-the-book/agents/$name.md\"" "$e" "marketplace: declares the agent $name"
+    if [ -f "$SKILL_DIR/agents/$name.md" ]; then ok
+    else fail "marketplace: the declared agent file $name.md does not exist"; fi
+  done
+  t=$(entry_of trial-by-fire)
+  assert_contains '"skills": ["./skills/trial-by-fire"]' "$t" 'marketplace: trial-by-fire keeps its skill list'
+  assert_not_contains '"agents"' "$t" 'marketplace: trial-by-fire declares no agents'
+}
+
+test_marketplace_declares_the_plugin
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

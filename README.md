@@ -3,7 +3,7 @@
 Open-source skills for AI coding agents. One repository, three ways to install: a Claude Code marketplace,
 the open Agent Skills layout (`npx skills`), or a plain copy of the folder.
 
-Today it ships one skill: **trial-by-fire**.
+It ships two skills: **trial-by-fire** and **by-the-book**.
 
 ## trial-by-fire
 
@@ -114,6 +114,71 @@ regression checks of `check-report.sh`.
 
 For the intent and the contracts behind all this, see [docs/design/trial-by-fire.md](docs/design/trial-by-fire.md).
 
+## by-the-book
+
+A code review of YOUR change against the repository's **own written rules**: the `CLAUDE.md` files and the
+`.claude/rules/*.md` whose `paths:` globs the change touches. In the same run it hunts correctness bugs,
+security holes and missing tests. Every rule finding quotes the rule verbatim. The skill returns ranked
+findings, and you pick, finding by finding, which ones to fix. The native `/code-review` reviews generically;
+this one holds the change to what your project wrote down, including its test policy (for example, "templates
+are checked on screen, not by automated tests").
+
+How a review works:
+
+- **The package:** a script finds the diff (the working tree, a GitHub pull request, or a range of past
+  commits), matches the changed files against the rules' globs, and writes a manifest with a read map, so the
+  agents read the changed ranges of large files instead of whole files. It warns about a broken rule glob, a
+  tighter base, or a project with no written rule at all.
+- **Three read-only agents, in parallel:** `review-rules` (sonnet, with a read budget) checks every
+  requirement of every applicable rule; `review-bugs` (opus) follows callers, consumers and the paths that
+  write a guarded state; `review-security-coverage` (opus) looks for abuse vectors, then for missing tests
+  under the project's written test policy.
+- **The report:** findings ranked by severity, duplicates merged, a defect repeated across files reported
+  once. Nothing is fixed before you choose.
+- **Past commits:** `--base <A> --head <B>` reviews only `A..B` from a temporary worktree, against today's
+  rules, without touching your working tree.
+
+### Requirements
+
+- bash and git; `gh`, authenticated, for pull-request mode.
+- Claude Code: the skill dispatches subagents.
+- Rules in the repository: `CLAUDE.md` files, `.claude/rules/*.md` with a `paths:` list in the frontmatter,
+  or both. Without any, only bugs, security and coverage are reviewed.
+
+### Install
+
+1. **Claude Code marketplace (recommended).** The only channel that installs the three agents.
+
+   ```
+   /plugin marketplace add seleziomar/claude-skills
+   /plugin install by-the-book@seleziomar-skills
+   ```
+
+   On Claude Code 2.1.275 or later, one step: `/plugin install by-the-book --marketplace seleziomar/claude-skills`.
+2. **Agent Skills CLI or a copy of the folder** (`npx skills add seleziomar/claude-skills`, or copy
+   `skills/by-the-book` to `~/.claude/skills/`): the skill runs in fallback mode, on `general-purpose` agents
+   that read the same agent files. A review costs about 20–30% more and the agents lose their read-only tool
+   lock; the skill tells you when it happens.
+3. **Claude.ai:** not supported. It cannot reach your repository.
+
+### Quick start
+
+In a repository with rules, ask your agent to "review my diff by the book", or call `/by-the-book:by-the-book`
+(marketplace install) or `/by-the-book` (other installs). A pull request: "review PR 123 by the book". Past
+commits: "review the commits `<A>..<B>` by the book".
+
+### Running the tests
+
+```
+bash skills/by-the-book/tests/run-tests.sh
+```
+
+They build fixture repositories at run time and check the script (diff, exclusions, read map, rules, scopes,
+range mode, cleanup), and they lock the words of `SKILL.md` and the agents that other parts depend on: the
+output contract, the model table of the fallback path, and the absence of project data.
+
+For the intent and the decisions behind it, see [docs/design/by-the-book.md](docs/design/by-the-book.md).
+
 ## Em português
 
 **trial-by-fire** ("teste de fogo") é uma skill para testar a sua própria entrega antes de mandá-la à QA ou ao
@@ -123,6 +188,14 @@ relatório. A matriz de testes é mostrada e aprovada por você antes de qualque
 `npx skills add seleziomar/claude-skills`. Para começar, crie `docs/trial-by-fire/ENVIRONMENT.md` no seu projeto
 a partir de `skills/trial-by-fire/environment-template.md` e peça um "teste de fogo" da sua entrega. O relatório
 sai no idioma que você usa.
+
+**by-the-book** ("conforme o livro") revisa a sua mudança contra as regras escritas do próprio repositório
+(`CLAUDE.md` e `.claude/rules/`) e, na mesma rodada, procura bugs, falhas de segurança e falta de teste,
+seguindo a política de testes escrita no projeto. Cada achado de regra cita a regra literalmente, e você
+escolhe, achado por achado, o que corrigir. Revisa o diff local, um PR do GitHub ou um intervalo de commits
+antigos (`--base <A> --head <B>`). Instale com `/plugin marketplace add seleziomar/claude-skills` e
+`/plugin install by-the-book@seleziomar-skills`; pelo `npx skills` ou por cópia da pasta, ela roda em modo de
+fallback, cerca de 20–30% mais cara. Peça "revisa meu diff pelas regras" ou chame `/by-the-book:by-the-book`.
 
 ## License
 

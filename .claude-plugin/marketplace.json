@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "seleziomar-skills",
-  "description": "Open-source skills for AI coding agents. Ships trial-by-fire: test your own delivery the way QA or the client would, before handing it over.",
+  "description": "Open-source skills for AI coding agents. Ships trial-by-fire (test your own delivery the way QA or the client would, before handing it over) and by-the-book (review a change against the repository's own written rules, plus bugs, security and missing tests).",
   "owner": {
     "name": "Seleziomar Jr"
   },
@@ -13,6 +13,19 @@
       "source": "./",
       "strict": false,
       "skills": ["./skills/trial-by-fire"]
+    },
+    {
+      "name": "by-the-book",
+      "description": "Code review against the repository's written rules (CLAUDE.md and .claude/rules), with correctness bugs, security and missing tests, by three read-only agents.",
+      "version": "1.0.0",
+      "source": "./",
+      "strict": false,
+      "skills": ["./skills/by-the-book"],
+      "agents": [
+        "./skills/by-the-book/agents/review-rules.md",
+        "./skills/by-the-book/agents/review-bugs.md",
+        "./skills/by-the-book/agents/review-security-coverage.md"
+      ]
     }
   ]
 }
