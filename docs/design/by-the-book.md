@@ -106,8 +106,10 @@ does not load agents from inside a skill folder, so the fallback copy never doub
    - Fallback path, when they are not: `general-purpose` with `model` from the table in `SKILL.md` (which the
      doc-lint keeps equal to each file's frontmatter), and a prompt that tells the agent to read
      `<skill-dir>/agents/<file>`, follow everything after its frontmatter as its instructions, and modify no
-     file. Before dispatching, tell the user once: fallback mode, about 20–30% more cost, no read-only lock;
-     installing from the marketplace avoids it.
+     file. The user is told (fallback mode, about 20–30% more cost, no read-only lock; installing from the
+     marketplace avoids it) in the same message as the dispatch and again as the report's first line: in an
+     end-to-end run the model dispatched without any text, and the report is the text that always reaches
+     the user.
    - Every prompt carries only the context block, the same for the three: repo, code root, frozen diff,
      manifest, rules, `CLAUDE.md` files, and "the frozen diff is the source of truth".
    - No refutation phase. An answer outside the output contract gets a `SendMessage` to the same agent asking
@@ -116,15 +118,16 @@ does not load agents from inside a skill folder, so the fallback copy never doub
 3. **Check the fingerprint** with the same arguments as step 1 plus `--fingerprint`. A different value means the
    tree moved during the review: say so and offer to run again. Skipped in range mode, where the reviewed
    commits cannot move.
-4. **Report** with one `ReportFindings` call: every finding, most severe first (`high`, `medium`, `low`), no
+4. **Cleanup.** In range mode, and only when step 1 exited `0` with a worktree, remove it with
+   `--cleanup <path>` as soon as the agents are done, before the report: the gate ends the turn, and a user
+   who never answers it would leave the worktree behind. Also when an agent failed or the user stopped.
+5. **Report** with one `ReportFindings` call: every finding, most severe first (`high`, `medium`, `low`), no
    `verdict` (no verification pass ran), `short_summary` at most 60 characters, the rule quote inside
    `summary`, duplicates merged across agents, one systematic defect in eleven files reported once with the
    eleven files. In range mode, say that line numbers refer to commit `B`. Without a `ReportFindings` tool,
    print the same entries as a numbered list, in the same order.
-5. **Gate.** Ask which findings the user wants fixed, finding by finding. False positives reach the user on
+6. **Gate.** Ask which findings the user wants fixed, finding by finding. False positives reach the user on
    purpose: they triage better, and cheaper, than a verifier per finding.
-6. **Cleanup.** In range mode, remove the temporary worktree with `--cleanup <path>`, also when an earlier step
-   failed.
 
 The red flags of the current skill stay, translated, with one change: "dispatching `general-purpose` instead of
 the skill's agents" becomes "on the plugin path, dispatching `general-purpose`; on the fallback path, dispatching
@@ -166,7 +169,9 @@ What changes:
   - The code the agents read comes from a detached worktree of `<head>` in a fresh temp directory, created
     with hooks disabled (`git -c core.hooksPath=/dev/null worktree add --detach`) and `GIT_LFS_SKIP_SMUDGE=1`.
     It never touches the project's working tree, index, `HEAD` or branches; the only trace is the worktree
-    entry in `.git`, removed by `--cleanup`. If the script fails after creating it, it removes it before exiting.
+    entry in `.git`, removed by `--cleanup`. If the script fails after creating it, it removes it before exiting,
+    also when it is interrupted: `HUP`, `INT` and `TERM` are trapped into exits, because bash 3.2 skips the
+    `EXIT` trap on an untrapped signal.
   - The read map counts lines in the worktree. Rules, `CLAUDE.md` files and the dead-rule check come from the
     current working tree: the point is to review past code against today's conventions, and in the end-to-end
     range below the conventions did not exist yet at `B`.
@@ -184,13 +189,20 @@ What changes:
 - **No remote.** Base detection already falls back from `origin/HEAD`, `origin/main`, `origin/master` to local
   `main` and `master`; this gets tests. With an empty diff (for example on `main` with nothing uncommitted), the
   exit-3 message also points to `--base A --head B` for past commits.
+- **The user's git config does not shape the parsed diff:** the diffs the script writes use `--no-color
+  --no-ext-diff --no-textconv --src-prefix=a/ --dst-prefix=b/` (`color.ui=always`, `diff.noprefix` or an
+  external diff driver would otherwise corrupt the read map and let excluded files through).
+- **`.claude/CLAUDE.md`** is read like the root `CLAUDE.md`.
+- **A rule with an inline `paths:` list** gets a warning (only YAML block lists are read) instead of silently
+  becoming global scope.
 - Error messages and comments in English, with the reasons behind each guard kept and rewritten without any
   project data.
 
 ## The agents
 
 All three: `tools: Read, Grep, Glob`; they modify no file; every path in the manifest is relative to
-`CODE ROOT`; the frozen diff is the source of truth. The shared block (anchoring invariant, what is not a finding,
+`CODE ROOT`, and they point `Grep` and `Glob` at it (in range mode a search without a path would look at
+today's code); the frozen diff is the source of truth. The shared block (anchoring invariant, what is not a finding,
 output contract) is identical in the three, between markers, and the doc-lint checks it. The output contract,
 consumed by the main session, not by a person:
 
@@ -211,7 +223,8 @@ With no finding, the answer is the single word `NONE`.
   and `YOUR FILES` (the files listed under each applicable rule; for a global-scope rule, `CODE SCOPE` plus
   `TEST SCOPE`), ranges from the read map widened by ~40 lines, whole file only when the map says so. It
   enumerates every checkable requirement of each rule before looking at the diff, and every finding needs a
-  verbatim quote.
+  verbatim quote. In a repository without `.claude/rules/`, the `CLAUDE.md` files act as a global-scope rule,
+  so the agent still has files to read.
 - **`review-bugs`** (`opus`): `FREE READING`. Logic bugs, contracts broken with callers (find them with `Grep`
   before claiming), every consumer of a new or changed value followed to its views and printouts, every path
   that writes a state a new guard protects, and the hot-path performance section. That section is rewritten
